@@ -190,6 +190,12 @@ def fetch_calendar -> list[ExternalItem] {
 
 # --- Notion (a to-do database OR a checklist page) ---------------------------
 
+"""The Notion API base URL (overridable via NOTION_API_BASE for testing)."""
+def _notion_base -> str {
+    return env("NOTION_API_BASE", "https://api.notion.com");
+}
+
+
 """The Notion auth headers."""
 def _notion_headers(token: str) -> dict {
     return {"Authorization": "Bearer " + token, "Notion-Version": "2022-06-28"};
@@ -217,7 +223,7 @@ def _notion_db_tasks(token: str, db: str, area: str) -> list[ExternalItem] {
     title_prop = env("ORBIT_NOTION_TITLE_PROP", "Name");
     date_prop = env("ORBIT_NOTION_DATE_PROP", "Due");
     data = _http_post(
-        "https://api.notion.com/v1/databases/" + db + "/query", _notion_headers(token), {"page_size": 50}
+        _notion_base() + "/v1/databases/" + db + "/query", _notion_headers(token), {"page_size": 50}
     );
     out = [];
     for page in (data.get("results") or []) {
@@ -245,7 +251,7 @@ def _notion_page_todos(token: str, block_id: str, area: str, depth: int) -> list
     if depth > 3 {
         return out;
     }
-    url = "https://api.notion.com/v1/blocks/" + block_id + "/children?page_size=100";
+    url = _notion_base() + "/v1/blocks/" + block_id + "/children?page_size=100";
     try {
         data = _http_get(url, _notion_headers(token));
     } except Exception as e {

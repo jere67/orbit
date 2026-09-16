@@ -11,7 +11,7 @@ work with no model:
 
 import from .model { Item, Priority, Status, FocusBlock, DayPlan, WeekOutlook }
 import from .llm { orbit_llm }
-import from .config { ai_enabled }
+import from .config { ai_enabled, ai_status }
 import from .items { list_items }
 import from .areas { list_areas }
 import from .scoring { is_open, rank, urgency }
@@ -272,22 +272,65 @@ def ask_agent(question: str, today: str) -> str by orbit_llm(tools=[tool_today, 
 sem ask_agent = "You are Orbit, the user's personal planning assistant. Answer their question using the tools to look up their actual items before responding. Be concise, specific, and helpful - reference real items and dates. If they ask what to do, recommend an order. Format your reply in Markdown: a short lead sentence, then a numbered or bulleted list with each item's title in **bold** followed by its date, and put each list item on its own line.";
 
 
-"""Answer a free-form question about the user's plans, using live tools."""
+def answer_from_context(question: str, agenda: str, today: str) -> str by orbit_llm();
+sem answer_from_context = "You are Orbit, the user's personal planning assistant. Answer the question using ONLY the agenda context - reference real item titles, and their dates and times when relevant (a 'due' like 2026-09-16T19:00 means 7:00pm). If the answer is not in the context, say you don't see anything. Format in Markdown: a short lead sentence, then a bulleted or numbered list with each item's title in **bold** and its time/date.";
+
+
+"""A compact but complete text view of the agenda for grounding a chat answer,
+including due times (so time-of-day questions work) and imported items."""
+def _agenda_context -> str {
+    brief = get_briefing();
+    lines = ["Today's date: " + today_str(), "", "Due today:"];
+    if brief.today {
+        for it in brief.today {
+            lines.append("- " + it.title + "  (" + it.area_key + ", " + str(it.kind.name) + ", due " + (it.due if it.due else "no time") + ")");
+        }
+    } else {
+        lines.append("- nothing");
+    }
+    lines.append("");
+    lines.append("Overdue:");
+    for it in brief.slipping[:8] {
+        lines.append("- " + it.title + "  (" + it.area_key + ", was due " + it.due + ")");
+    }
+    lines.append("");
+    lines.append("This week:");
+    for b in brief.week {
+        for it in b.items {
+            lines.append("- " + b.label + ": " + it.title + "  (" + it.area_key + ", due " + (it.due if it.due else "") + ")");
+        }
+    }
+    return "\n".join(lines)[:(PROMPT_CAP * 2)];
+}
+
+
+"""Answer a free-form question about the user's plans.
+
+Cloud models use agentic tool-calling (they read the graph through tools).
+The local model instead gets the agenda stuffed into one prompt: its llama.cpp
+backend can abort() on the multi-pass tool-calling loop (an uncatchable native
+crash), so we keep the local path to a single, stable completion.
+"""
 def:pub ask(question: str) -> str {
     q = question.strip();
     if not q {
         return "";
     }
     if not ai_enabled() {
-        return "Ask Orbit needs an AI model. Set ANTHROPIC_API_KEY in .env (or ORBIT_LOCAL_AI=1 to use the local model).";
+        return "Ask Orbit needs an AI model. Set ANTHROPIC_API_KEY in .env, or install the local model.";
     }
+    today = today_str();
     try {
-        answer = ask_agent(q, today_str());
+        if ai_status() == "cloud" {
+            answer = ask_agent(q, today);
+        } else {
+            answer = answer_from_context(q, _agenda_context(), today);
+        }
         if answer.strip() {
             return answer.strip();
         }
     } except Exception as e {
         _ = e;
     }
-    return "I couldn't reach the AI model just now. Check your ANTHROPIC_API_KEY, or try again.";
+    return "I couldn't reach the AI model just now. Try again.";
 }
