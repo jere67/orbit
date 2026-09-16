@@ -88,17 +88,41 @@ def _ics_date(val: str) -> str {
 }
 
 
-"""Read upcoming events from the configured Google Calendar ICS feed."""
-def fetch_calendar -> list[ExternalItem] {
-    url = env("ORBIT_CAL_ICS_URL");
-    if not url {
-        return [];
+"""Every configured Google Calendar feed as {area, url}.
+
+Two ways to configure, which combine:
+- ORBIT_CAL_ICS_URL (+ ORBIT_CAL_AREA): a single feed - the simple case.
+- ORBIT_CAL_ICS_URLS: several feeds as `area|url;area|url;...`, one entry per
+  calendar, so each color-coded Google calendar maps to its own Orbit area
+  (e.g. `fitness|https://.../gym.ics;clubs|https://.../clubs.ics`).
+"""
+def _ics_sources -> list[dict[str, str]] {
+    out = [];
+    single = env("ORBIT_CAL_ICS_URL");
+    if single {
+        out.append({"area": env("ORBIT_CAL_AREA", "other"), "url": single});
     }
-    area = env("ORBIT_CAL_AREA", "other");
-    req = urllib.request.Request(url, headers={"User-Agent": "Orbit"});
-    with urllib.request.urlopen(req, timeout=20) as resp {
-        text = resp.read().decode("utf-8", "ignore");
+    multi = env("ORBIT_CAL_ICS_URLS");
+    if multi {
+        for piece in multi.split(";") {
+            e = piece.strip();
+            if not e {
+                continue;
+            }
+            (area, sep, url) = e.partition("|");
+            u = url.strip();
+            if not u {
+                continue;
+            }
+            out.append({"area": area.strip() or "other", "url": u});
+        }
     }
+    return out;
+}
+
+
+"""Parse the upcoming VEVENTs out of one ICS feed, each tagged with `area`."""
+def _parse_ics(text: str, area: str) -> list[ExternalItem] {
     today = today_str();
     horizon = add_days(today, 30);
     out = [];
@@ -117,7 +141,7 @@ def fetch_calendar -> list[ExternalItem] {
                     out.append(
                         ExternalItem(
                             title=cur["SUMMARY"], source="calendar", area_key=area,
-                            kind="EVENT", due=due, external_id=uid
+                            kind="EVENT", due=due, external_id=area + ":" + uid
                         )
                     );
                 }
@@ -129,6 +153,25 @@ def fetch_calendar -> list[ExternalItem] {
             if key == "SUMMARY" or key == "DTSTART" or key == "UID" {
                 cur[key] = value;
             }
+        }
+    }
+    return out;
+}
+
+
+"""Read upcoming events from every configured Google Calendar feed, tagging each
+feed's events with its mapped area. A broken feed is skipped, not fatal."""
+def fetch_calendar -> list[ExternalItem] {
+    out = [];
+    for src in _ics_sources() {
+        try {
+            req = urllib.request.Request(src["url"], headers={"User-Agent": "Orbit"});
+            with urllib.request.urlopen(req, timeout=20) as resp {
+                text = resp.read().decode("utf-8", "ignore");
+            }
+            out = out + _parse_ics(text, src["area"]);
+        } except Exception as e {
+            _ = e;
         }
     }
     return out;
@@ -255,7 +298,7 @@ def fetch_slack -> list[ExternalItem] {
 """Which connectors are configured (for the Settings UI)."""
 def:pub connector_status -> list[ConnectorStatus] {
     return [
-        ConnectorStatus(name="calendar", label="Google Calendar", configured=has_env("ORBIT_CAL_ICS_URL")),
+        ConnectorStatus(name="calendar", label="Google Calendar", configured=(has_env("ORBIT_CAL_ICS_URL") or has_env("ORBIT_CAL_ICS_URLS"))),
         ConnectorStatus(name="notion", label="Notion", configured=(has_env("NOTION_TOKEN") and has_env("NOTION_DB_ID"))),
         ConnectorStatus(name="slack", label="Slack", configured=(has_env("SLACK_TOKEN") and has_env("SLACK_CHANNELS")))
     ];
