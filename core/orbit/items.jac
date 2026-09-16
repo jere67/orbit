@@ -90,7 +90,9 @@ def:pub add_item(
     priority: str = "MED",
     effort_min: int = 30,
     recurrence: str = "",
-    notes: str = ""
+    notes: str = "",
+    source: str = "",
+    external_id: str = ""
 ) -> Item {
     ensure_seed();
     resolved = area_key if area_exists(area_key) else "other";
@@ -103,10 +105,26 @@ def:pub add_item(
         effort_min=effort_min,
         recurrence=recurrence,
         notes=notes,
-        created_at=now_iso()
+        created_at=now_iso(),
+        source=source,
+        external_id=external_id
     );
     log_event(item, "created");
     return item;
+}
+
+
+"""Find an item previously imported from an external source, or None."""
+def item_by_external(source: str, external_id: str) -> Item | None {
+    if not external_id {
+        return None;
+    }
+    for it in [root-->][?:Item] {
+        if it.source == source and it.external_id == external_id {
+            return it;
+        }
+    }
+    return None;
 }
 
 

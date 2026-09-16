@@ -55,7 +55,9 @@ node Item {
         recurrence: str = "",
         notes: str = "",
         created_at: str = "",
-        completed_at: str = "";
+        completed_at: str = "",
+        source: str = "",
+        external_id: str = "";
 }
 
 # A child of an Item, produced by AI breakdown or by hand.
@@ -127,4 +129,39 @@ obj Analytics {
         completion: CompletionStats = CompletionStats(),
         density: list[DensityDay] = [],
         streaks: Streaks = Streaks();
+}
+
+# Assistant and connector response objects (see assistant.jac / connectors.jac).
+
+obj FocusBlock {
+    has when: str = "",
+        title: str = "",
+        why: str = "";
+}
+
+obj DayPlan {
+    has greeting: str = "",
+        focus: list[FocusBlock] = [],
+        watch_out: str = "";
+}
+
+obj WeekOutlook {
+    has summary: str = "",
+        busiest_day: str = "",
+        risks: list[str] = [],
+        suggestion: str = "";
+}
+
+obj ConnectorStatus {
+    has name: str,
+        label: str,
+        configured: bool = False;
+}
+
+obj SyncResult {
+    has source: str,
+        configured: bool = False,
+        imported: int = 0,
+        updated: int = 0,
+        error: str = "";
 }
