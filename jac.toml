@@ -64,6 +64,10 @@ exclude = [".jac/*"]
 # (which would drag `datetime` in and fail client codegen). Clients receive the
 # nodes/objs/enums as wire types across the single service boundary.
 "core.orbit.model" = "server"
+"core.orbit.config" = "server"
+"core.orbit.llm" = "server"
+"core.orbit.connectors" = "server"
+"core.orbit.assistant" = "server"
 "core.orbit.timeutil" = "server"
 "core.orbit.scoring" = "server"
 "core.orbit.areas" = "server"
@@ -90,6 +94,7 @@ author = "Jeremy Moon"
 theme_color = "#6366f1"
 
 [dependencies]
+"byllm[local]" = ">=0.0.0"
 [dependencies.npm]
 "@tailwindcss/vite" = "^4.1.17"
 tailwindcss = "^4.1.17"
