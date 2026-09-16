@@ -87,7 +87,7 @@ menuAccent = "subtle"
 menuColor = "default"
 [byllm]
 [byllm.model]
-default_model = "local:gemma-4-e4b"
+default_model = "local:qwen3.5-4b"
 
 [client]
 [client.vite]

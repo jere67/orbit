@@ -67,7 +67,10 @@ def model_name -> str {
     if os.getenv("ANTHROPIC_API_KEY") {
         return "anthropic/claude-sonnet-4-6";
     }
-    return "local:gemma-4-e4b";
+    # Qwen 3.5 4B is the default free local model. We avoid Gemma here: its
+    # llama.cpp sliding-window path intermittently aborts the process on this
+    # backend; Qwen's architecture does not hit that bug.
+    return "local:qwen3.5-4b";
 }
 
 
@@ -80,14 +83,9 @@ logic, which always works and never crashes the server.
 """
 def ai_enabled -> bool {
     ensure_env();
-    if os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY") {
-        return True;
-    }
-    forced = os.getenv("ORBIT_MODEL");
-    if forced and not forced.startswith("local:") {
-        return True;
-    }
-    return bool(os.getenv("ORBIT_LOCAL_AI"));
+    # AI is on by default: a hosted key uses the cloud, otherwise the bundled
+    # free local model (Qwen). Set ORBIT_AI_OFF=1 to force deterministic-only.
+    return not bool(os.getenv("ORBIT_AI_OFF"));
 }
 
 
@@ -96,6 +94,9 @@ def ai_enabled -> bool {
 'off' still means fully functional - Orbit falls back to deterministic logic."""
 def:pub ai_status -> str {
     ensure_env();
+    if os.getenv("ORBIT_AI_OFF") {
+        return "off";
+    }
     if os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY") {
         return "cloud";
     }
@@ -103,8 +104,5 @@ def:pub ai_status -> str {
     if forced and not forced.startswith("local:") {
         return "cloud";
     }
-    if os.getenv("ORBIT_LOCAL_AI") {
-        return "local";
-    }
-    return "off";
+    return "local";
 }
