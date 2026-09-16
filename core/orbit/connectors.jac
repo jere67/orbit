@@ -18,8 +18,58 @@ import urllib.parse;
 import from .config { env, has_env, ai_enabled }
 import from .llm { orbit_llm }
 import from .items { add_item, item_by_external, list_items }
+import from .areas { list_areas }
 import from .timeutil { today_str, date_of, add_days, now_iso, iso_in }
 import from .model { ConnectorStatus, SyncResult, PreviewItem, ConnectorPreview }
+
+
+def classify_areas(titles: list[str], area_keys: list[str]) -> list[str] by orbit_llm();
+sem classify_areas = "For each event/task title, pick the single best-fitting area key from area_keys - return exactly one key per title, in the same order, lowercased. Judge by meaning: course names or codes and homework -> coursework; interviews, recruiting, companies, applications -> jobs; workouts, gym, sports -> fitness; club or student-org names -> clubs; research, lab, advisor, papers -> research; TA duties, office hours, grading, discussion sections -> ta; anything unclear -> other. Only use keys from area_keys.";
+
+
+"""A cheap keyword-based area guess for one title (fallback when no AI)."""
+def _keyword_area(title: str, keys: list[str]) -> str {
+    t = title.lower();
+    if any([w in t for w in ["interview", "recruit", "onsite", "application", "career", "offer"]]) and "jobs" in keys { return "jobs"; }
+    if any([w in t for w in ["muay", "gym", "lift", "workout", "run", "yoga", "climb", "fitness", "thai"]]) and "fitness" in keys { return "fitness"; }
+    if any([w in t for w in ["office hours", "grading", "grade", "discussion", "piazza", "staff meeting", " oh"]]) and "ta" in keys { return "ta"; }
+    if any([w in t for w in ["research", "lab", "advisor", "paper", "baseline", "experiment"]]) and "research" in keys { return "research"; }
+    if any([w in t for w in ["club", "blockchain", "council", "society", "org"]]) and "clubs" in keys { return "clubs"; }
+    if any([w in t for w in ["eecs", "fin ", "econ", "math", "homework", " hw", "problem set", "lecture", "exam", "midterm", "reading", "course", "497"]]) and "coursework" in keys { return "coursework"; }
+    return "other";
+}
+
+
+"""Infer an Orbit area for each title - one batched AI call when available, else
+keyword rules. Always returns one area key per title (never crashes)."""
+def _infer_areas(titles: list[str]) -> list[str] {
+    keys = [a.key for a in list_areas() if not a.archived];
+    capped = titles[:60];
+    if ai_enabled() and capped {
+        try {
+            guessed = classify_areas([t[:100] for t in capped], keys);
+            if len(guessed) == len(capped) {
+                out = [];
+                i = 0;
+                for t in titles {
+                    picked = "";
+                    if i < len(guessed) {
+                        gk = guessed[i].strip().lower();
+                        picked = gk if gk in keys else _keyword_area(t, keys);
+                    } else {
+                        picked = _keyword_area(t, keys);
+                    }
+                    out.append(picked);
+                    i += 1;
+                }
+                return out;
+            }
+        } except Exception as e {
+            _ = e;
+        }
+    }
+    return [_keyword_area(t, keys) for t in titles];
+}
 
 
 # Persisted Slack auth, so a rotating refresh token (which is single-use and
@@ -182,7 +232,18 @@ def fetch_calendar -> list[ExternalItem] {
             with urllib.request.urlopen(req, timeout=20) as resp {
                 text = resp.read().decode("utf-8", "ignore");
             }
-            gathered = gathered + _parse_ics(text, src["area"]);
+            items = _parse_ics(text, src["area"]);
+            if src["area"] == "auto" {
+                areas = _infer_areas([it.title for it in items]);
+                j = 0;
+                for it in items {
+                    if j < len(areas) {
+                        it.area_key = areas[j];
+                    }
+                    j += 1;
+                }
+            }
+            gathered = gathered + items;
         } except Exception as e {
             _ = e;
         }
@@ -296,22 +357,39 @@ def _notion_page_todos(token: str, block_id: str, area: str, depth: int) -> list
 
 
 """Read open tasks from Notion: a database (NOTION_DB_ID) or a checklist page
-(NOTION_PAGE_ID). Share the DB/page with your integration first."""
+(NOTION_PAGE_ID). Share the DB/page with your integration first.
+
+If ORBIT_NOTION_AREA is `auto`, each task's area is inferred from its title
+rather than all landing in one area."""
 def fetch_notion -> list[ExternalItem] {
     token = env("NOTION_TOKEN");
     if not token {
         return [];
     }
     area = env("ORBIT_NOTION_AREA", "coursework");
+    items = [];
     page = env("NOTION_PAGE_ID");
     if page {
-        return _notion_page_todos(token, page, area, 0);
+        items = _notion_page_todos(token, page, area, 0);
+    } else {
+        db = env("NOTION_DB_ID");
+        if db {
+            items = _notion_db_tasks(token, db, area);
+        } else {
+            return [];
+        }
     }
-    db = env("NOTION_DB_ID");
-    if db {
-        return _notion_db_tasks(token, db, area);
+    if area == "auto" {
+        areas = _infer_areas([it.title for it in items]);
+        j = 0;
+        for it in items {
+            if j < len(areas) {
+                it.area_key = areas[j];
+            }
+            j += 1;
+        }
     }
-    return [];
+    return items;
 }
 
 
