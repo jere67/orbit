@@ -20,12 +20,11 @@ import from "@hugeicons/core-free-icons" {
     AnalyticsUpIcon, Settings02Icon, Add01Icon, ArrowRight01Icon, Alert02Icon,
     MoreHorizontalIcon, Delete02Icon, Tick02Icon, Fire02Icon, RefreshIcon,
     Link01Icon, Archive02Icon, Target02Icon, InboxIcon, BubbleChatIcon,
-    FilterIcon, SentIcon
+    FilterIcon, SentIcon, SidebarLeft01Icon
 }
 
 import from ..components.ui.button { Button }
 import from ..components.ui.card { Card, CardHeader, CardTitle, CardContent }
-import from ..components.ui.tabs { Tabs, TabsList, TabsTrigger }
 import from ..components.ui.input { Input }
 import from ..components.ui.select { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem }
 import from ..components.ui.dropdown_menu {
@@ -116,7 +115,8 @@ def:pub app -> JsxElement {
         filter_area: str = "all",
         filter_priority: str = "all",
         hovered_density: str = "",
-        ai_state: str = "off";
+        ai_state: str = "off",
+        sidebar_open: bool = True;
 
     async def reload {
         items = await list_items();
@@ -590,66 +590,65 @@ def:pub app -> JsxElement {
             </div>;
     }
 
-    def render_chat -> JsxElement {
+    def chat_input_box -> JsxElement {
         return
-            <div className="flex min-h-[68vh] flex-col">
-                <div className="mb-5 flex items-center gap-2.5">
-                    <span className="flex size-9 items-center justify-center rounded-lg bg-primary/12 text-primary">
-                        <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-5" />
-                    </span>
-                    <div>
-                        <h1 className="font-display text-xl text-foreground">Chat with Orbit</h1>
-                        <p className="text-xs text-muted-foreground">It reads your real agenda before it answers.</p>
-                    </div>
-                </div>
+            <div className="flex items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-[0_2px_12px_rgba(36,32,27,0.06)]">
+                <input
+                    className="flex-1 bg-transparent px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                    value={chat_input}
+                    placeholder="Ask Orbit anything…"
+                    onChange={lambda (e: ChangeEvent) { chat_input = e.target.value; }}
+                    onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { do_chat_send(); } }} />
+                <Button onClick={lambda (e: MouseEvent) { do_chat_send(); }} disabled={chat_busy}>
+                    <HugeiconsIcon icon={SentIcon} strokeWidth={2} className="size-4" />
+                    Send
+                </Button>
+            </div>;
+    }
 
-                <div className="flex-1 space-y-4">
-                    {len(chat_msgs) == 0 and not chat_busy and
-                        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-border py-14 text-center">
-                            <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                                <HugeiconsIcon icon={AiMagicIcon} strokeWidth={2} className="size-6" />
-                            </span>
-                            <p className="text-sm text-muted-foreground">Ask about your week, your deadlines, or what to do first.</p>
-                            <div className="flex flex-wrap justify-center gap-2">
-                                {[
-                                    <button key={ex}
-                                            onClick={lambda (e: MouseEvent) { ask_example(ex); }}
-                                            className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-foreground transition-colors hover:border-primary/50">
-                                        {ex}
-                                    </button> for ex in ["What should I focus on before Friday?", "Summarize my research tasks", "What's slipping?"]
-                                ]}
-                            </div>
-                        </div>}
-                    {[
-                        <div key={str(i)} className={"flex " + ("justify-end" if m["role"] == "user" else "justify-start")}>
-                            {m["role"] == "assistant" and
-                                <span className="mr-2 mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/12 text-primary">
-                                    <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-3.5" />
-                                </span>}
-                            <div className={"max-w-[80%] whitespace-pre-line rounded-2xl px-4 py-2.5 text-sm leading-relaxed " + ("bg-primary text-primary-foreground" if m["role"] == "user" else "border border-border bg-card text-foreground")}>
-                                {m["text"]}
-                            </div>
-                        </div> for (i, m) in enumerate(chat_msgs)
-                    ]}
-                    {chat_busy and
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-4 animate-pulse text-primary" />
-                            Orbit is thinking…
-                        </div>}
-                </div>
-
-                <div className="sticky bottom-4 mt-6 flex items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-[0_2px_12px_rgba(36,32,27,0.06)]">
-                    <input
-                        className="flex-1 bg-transparent px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-                        value={chat_input}
-                        placeholder="Ask Orbit anything…"
-                        onChange={lambda (e: ChangeEvent) { chat_input = e.target.value; }}
-                        onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { do_chat_send(); } }} />
-                    <Button onClick={lambda (e: MouseEvent) { do_chat_send(); }} disabled={chat_busy}>
-                        <HugeiconsIcon icon={SentIcon} strokeWidth={2} className="size-4" />
-                        Send
-                    </Button>
-                </div>
+    def render_chat -> JsxElement {
+        empty = len(chat_msgs) == 0 and not chat_busy;
+        return
+            <div className="flex min-h-[calc(100vh-9rem)] flex-col">
+                {empty and
+                    <div className="flex flex-1 flex-col items-center justify-center gap-5">
+                        <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                            <HugeiconsIcon icon={AiMagicIcon} strokeWidth={2} className="size-6" />
+                        </span>
+                        <p className="font-display text-lg text-foreground">Ask about your week, your deadlines, or what to do first.</p>
+                        <div className="flex flex-wrap justify-center gap-2">
+                            {[
+                                <button key={ex}
+                                        onClick={lambda (e: MouseEvent) { ask_example(ex); }}
+                                        className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-foreground transition-colors hover:border-primary/50">
+                                    {ex}
+                                </button> for ex in ["What should I focus on before Friday?", "Summarize my research tasks", "What's slipping?"]
+                            ]}
+                        </div>
+                        <div className="mt-2 w-full max-w-2xl">{chat_input_box()}</div>
+                    </div>}
+                {not empty and
+                    <>
+                        <div className="flex-1 space-y-4 pt-2">
+                            {[
+                                <div key={str(i)} className={"flex " + ("justify-end" if m["role"] == "user" else "justify-start")}>
+                                    {m["role"] == "assistant" and
+                                        <span className="mr-2 mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/12 text-primary">
+                                            <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-3.5" />
+                                        </span>}
+                                    <div className={"max-w-[80%] whitespace-pre-line rounded-2xl px-4 py-2.5 text-sm leading-relaxed " + ("bg-primary text-primary-foreground" if m["role"] == "user" else "border border-border bg-card text-foreground")}>
+                                        {m["text"]}
+                                    </div>
+                                </div> for (i, m) in enumerate(chat_msgs)
+                            ]}
+                            {chat_busy and
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-4 animate-pulse text-primary" />
+                                    Orbit is thinking…
+                                </div>}
+                        </div>
+                        <div className="sticky bottom-4 mt-6">{chat_input_box()}</div>
+                    </>}
             </div>;
     }
 
@@ -668,14 +667,6 @@ def:pub app -> JsxElement {
                 <div className="font-display text-3xl text-foreground">{value}</div>
                 <div className="mt-1 text-xs text-muted-foreground">{label}</div>
             </div>;
-    }
-
-    def tab_trigger(id: str, label: str, icon: any) -> JsxElement {
-        return
-            <TabsTrigger value={id} className="gap-1.5">
-                <HugeiconsIcon icon={icon} strokeWidth={2} className="size-4" />
-                <span className="hidden sm:inline">{label}</span>
-            </TabsTrigger>;
     }
 
     def nav_item(id: str, label: str, icon: any) -> JsxElement {
@@ -709,25 +700,45 @@ def:pub app -> JsxElement {
 
     def render_sidebar -> JsxElement {
         return
-            <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-border bg-[#efeae0] px-3 py-5 md:flex">
-                <div className="mb-6 flex items-center gap-2.5 px-2">
-                    <span className="orbit-mark size-6 rounded-full" />
-                    <div className="flex flex-col leading-tight">
-                        <span className="font-display text-[1.05rem] text-foreground">Orbit</span>
-                        <span className="text-[0.7rem] text-muted-foreground">the agenda that thinks</span>
+            <aside className={"sticky top-0 hidden h-screen shrink-0 flex-col overflow-hidden bg-[#efeae0] transition-[width] duration-300 ease-in-out md:flex " + ("w-60 border-r border-border" if sidebar_open else "w-0")}>
+                <div className="flex h-full w-60 flex-col px-3 py-5">
+                    <div className="mb-6 flex items-center justify-between gap-2 px-2">
+                        <div className="flex items-center gap-2.5">
+                            <span className="orbit-mark size-6 rounded-full" />
+                            <div className="flex flex-col leading-tight">
+                                <span className="font-display text-[1.05rem] text-foreground">Orbit</span>
+                                <span className="text-[0.7rem] text-muted-foreground">the agenda that thinks</span>
+                            </div>
+                        </div>
+                        <button onClick={lambda (e: MouseEvent) { sidebar_open = False; }}
+                                title="Collapse sidebar"
+                                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground">
+                            <HugeiconsIcon icon={SidebarLeft01Icon} strokeWidth={2} className="size-[1.15rem]" />
+                        </button>
+                    </div>
+                    <nav className="flex flex-col gap-1">
+                        {nav_item("briefing", "Briefing", DashboardSquare01Icon)}
+                        {nav_item("chat", "Chat", BubbleChatIcon)}
+                        {nav_item("agenda", "Agenda", InboxIcon)}
+                        {nav_item("insight", "Insight", AnalyticsUpIcon)}
+                        {nav_item("settings", "Settings", Settings02Icon)}
+                    </nav>
+                    <div className="mt-auto border-t border-border pt-3">
+                        {ai_footer()}
                     </div>
                 </div>
-                <nav className="flex flex-col gap-1">
-                    {nav_item("briefing", "Briefing", DashboardSquare01Icon)}
-                    {nav_item("chat", "Chat", BubbleChatIcon)}
-                    {nav_item("agenda", "Agenda", InboxIcon)}
-                    {nav_item("insight", "Insight", AnalyticsUpIcon)}
-                    {nav_item("settings", "Settings", Settings02Icon)}
-                </nav>
-                <div className="mt-auto border-t border-border pt-3">
-                    {ai_footer()}
-                </div>
             </aside>;
+    }
+
+    def bottom_nav_item(id: str, label: str, icon: any) -> JsxElement {
+        active = tab == id;
+        return
+            <button key={id}
+                    onClick={lambda (e: MouseEvent) { tab = id; }}
+                    className={"flex flex-1 flex-col items-center gap-0.5 py-1.5 text-[0.62rem] font-medium transition-colors " + ("text-primary" if active else "text-muted-foreground")}>
+                <HugeiconsIcon icon={icon} strokeWidth={2} className="size-[1.15rem]" />
+                <span>{label}</span>
+            </button>;
     }
 
     # --- Layout ---------------------------------------------------------------
@@ -736,22 +747,15 @@ def:pub app -> JsxElement {
         <div className="flex min-h-screen">
             {render_sidebar()}
             <div className="min-w-0 flex-1">
-                <header className="glass sticky top-0 z-20 border-b border-border md:hidden">
-                    <div className="flex items-center gap-2.5 px-4 pt-3">
-                        <span className="orbit-mark size-6 rounded-full" />
-                        <span className="font-display text-[1.05rem] text-foreground">Orbit</span>
-                    </div>
-                    <div className="px-3 py-2">
-                        <Tabs value={tab} onValueChange={lambda (v: str) { tab = v; }}>
-                            <TabsList className="w-full">
-                                {tab_trigger("briefing", "Briefing", DashboardSquare01Icon)}
-                                {tab_trigger("chat", "Chat", BubbleChatIcon)}
-                                {tab_trigger("agenda", "Agenda", InboxIcon)}
-                                {tab_trigger("insight", "Insight", AnalyticsUpIcon)}
-                                {tab_trigger("settings", "Settings", Settings02Icon)}
-                            </TabsList>
-                        </Tabs>
-                    </div>
+                {not sidebar_open and
+                    <button onClick={lambda (e: MouseEvent) { sidebar_open = True; }}
+                            title="Open sidebar"
+                            className="fixed left-3 top-3 z-30 hidden size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground md:flex">
+                        <HugeiconsIcon icon={SidebarLeft01Icon} strokeWidth={2} className="size-[1.15rem]" />
+                    </button>}
+                <header className="glass sticky top-0 z-20 flex items-center gap-2.5 border-b border-border px-4 py-3 md:hidden">
+                    <span className="orbit-mark size-6 rounded-full" />
+                    <span className="font-display text-[1.05rem] text-foreground">Orbit</span>
                 </header>
 
             <main className="mx-auto w-full max-w-5xl px-6 pb-28 pt-10">
@@ -1064,6 +1068,13 @@ def:pub app -> JsxElement {
                     </div>
                 }
             </main>
+            <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-[#efeae0]/95 backdrop-blur md:hidden">
+                {bottom_nav_item("briefing", "Briefing", DashboardSquare01Icon)}
+                {bottom_nav_item("chat", "Chat", BubbleChatIcon)}
+                {bottom_nav_item("agenda", "Agenda", InboxIcon)}
+                {bottom_nav_item("insight", "Insight", AnalyticsUpIcon)}
+                {bottom_nav_item("settings", "Settings", Settings02Icon)}
+            </nav>
             </div>
         </div>;
 }
