@@ -1,5 +1,5 @@
-"""Live connectors that pull real items from Google Calendar, Notion, and Slack
-into the one unified stream.
+"""Live connectors that pull real items from Google Calendar and Notion into the
+one unified stream.
 
 Each connector reads its credentials from the environment (loaded from a
 gitignored .env by `config`), calls the service's HTTP API with the standard
@@ -14,13 +14,12 @@ import re;
 import json;
 import hashlib;
 import urllib.request;
-import urllib.parse;
 
-import from .config { env, has_env, ai_enabled, ai_status }
+import from .config { env, has_env, ai_status }
 import from .llm { orbit_llm }
 import from .items { add_item, item_by_external, list_items }
 import from .areas { list_areas }
-import from .timeutil { today_str, date_of, add_days, now_iso, iso_in, days_between }
+import from .timeutil { today_str, date_of, add_days, days_between }
 import from .model { ConnectorStatus, SyncResult, PreviewItem, ConnectorPreview }
 
 
@@ -124,15 +123,6 @@ def _infer_areas(titles: list[str]) -> list[str] {
         }
     }
     return [_keyword_area(t, keys) for t in titles];
-}
-
-
-# Persisted Slack auth, so a rotating refresh token (which is single-use and
-# changes on every refresh) survives restarts. Never crosses to the client.
-node SlackToken {
-    has access_token: str = "",
-        refresh_token: str = "",
-        expires_at: str = "";
 }
 
 
@@ -493,145 +483,6 @@ def fetch_notion -> list[ExternalItem] {
 }
 
 
-# --- Slack (research / TA channels) ------------------------------------------
-
-def extract_actions(messages: list[str]) -> list[str] by orbit_llm();
-sem extract_actions = "From these chat messages, extract concrete action items or tasks the reader should follow up on, as short imperative titles. Ignore greetings and chatter; return an empty list if there are none.";
-
-
-"""AI-extract action items from messages, falling back to keyword matching."""
-def _actions_from(messages: list[str]) -> list[str] {
-    msgs = [m for m in messages if m.strip()];
-    if not msgs {
-        return [];
-    }
-    if ai_enabled() {
-        try {
-            acts = extract_actions([m[:200] for m in msgs[:25]]);
-            cleaned = [a.strip() for a in acts if a.strip()];
-            if cleaned {
-                return cleaned[:10];
-            }
-        } except Exception as e {
-            _ = e;
-        }
-    }
-    keywords = ["todo", "deadline", "due", "please", "can you", "need to", "action item", "by tomorrow", "by friday"];
-    out = [];
-    for m in msgs {
-        ml = m.lower();
-        if any([k in ml for k in keywords]) {
-            out.append(m.strip()[:120]);
-        }
-    }
-    return out[:10];
-}
-
-
-"""The persisted Slack auth node under root (created once)."""
-def _slack_state -> SlackToken {
-    existing = [root-->][?:SlackToken];
-    if existing {
-        return existing[0];
-    }
-    return root ++> SlackToken();
-}
-
-
-"""Exchange a rotating refresh token for a fresh access token (Slack OAuth v2,
-form-encoded). Returns the parsed JSON response."""
-def _slack_refresh(client_id: str, client_secret: str, refresh: str) -> dict {
-    form = {
-        "grant_type": "refresh_token",
-        "refresh_token": refresh,
-        "client_id": client_id,
-        "client_secret": client_secret
-    };
-    body = urllib.parse.urlencode(form).encode("utf-8");
-    req = urllib.request.Request(
-        "https://slack.com/api/oauth.v2.access",
-        data=body,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        method="POST"
-    );
-    with urllib.request.urlopen(req, timeout=20) as r {
-        return json.loads(r.read().decode("utf-8"));
-    }
-}
-
-
-"""The Slack access token to use now.
-
-Static-token setups (SLACK_TOKEN with no client id/secret) are returned as-is.
-When token rotation is configured (client id + secret + an initial
-SLACK_REFRESH_TOKEN), this caches the short-lived access token in the graph and
-refreshes it - rotating and persisting the new refresh token - when it expires.
-"""
-def _slack_access_token -> str {
-    static_token = env("SLACK_TOKEN");
-    client_id = env("SLACK_CLIENT_ID");
-    client_secret = env("SLACK_CLIENT_SECRET");
-    if not (client_id and client_secret) {
-        return static_token;
-    }
-    st = _slack_state();
-    if st.access_token and st.expires_at and st.expires_at > now_iso() {
-        return st.access_token;
-    }
-    refresh = st.refresh_token or env("SLACK_REFRESH_TOKEN");
-    if not refresh {
-        return static_token;
-    }
-    try {
-        resp = _slack_refresh(client_id, client_secret, refresh);
-    } except Exception as e {
-        _ = e;
-        return st.access_token or static_token;
-    }
-    if not resp.get("ok") {
-        return st.access_token or static_token;
-    }
-    st.access_token = resp.get("access_token") or "";
-    st.refresh_token = resp.get("refresh_token") or refresh;
-    ttl = resp.get("expires_in") or 43200;
-    st.expires_at = iso_in(int(ttl) - 120);
-    return st.access_token;
-}
-
-
-"""Read recent messages from the configured Slack channels and extract tasks."""
-def fetch_slack -> list[ExternalItem] {
-    channels = env("SLACK_CHANNELS");
-    if not channels {
-        return [];
-    }
-    token = _slack_access_token();
-    if not token {
-        return [];
-    }
-    area = env("ORBIT_SLACK_AREA", "research");
-    out = [];
-    for raw in channels.split(",") {
-        cid = raw.strip();
-        if not cid {
-            continue;
-        }
-        url = "https://slack.com/api/conversations.history?channel=" + cid + "&limit=40";
-        data = _http_get(url, {"Authorization": "Bearer " + token});
-        texts = [(m.get("text") or "") for m in (data.get("messages") or [])];
-        for action in _actions_from(texts) {
-            out.append(
-                ExternalItem(
-                    title=action, source="slack", area_key=area, kind="TASK",
-                    due="", external_id=cid + ":" + _hash_id(action)
-                )
-            );
-        }
-    }
-    return out;
-}
-
-
 # --- Status and sync ---------------------------------------------------------
 
 """Dry-run the connectors: return exactly what Google Calendar and Notion pull
@@ -656,8 +507,7 @@ def:pub preview_connectors -> ConnectorPreview {
 def:pub connector_status -> list[ConnectorStatus] {
     return [
         ConnectorStatus(name="calendar", label="Google Calendar", configured=(has_env("ORBIT_CAL_ICS_URL") or has_env("ORBIT_CAL_ICS_URLS"))),
-        ConnectorStatus(name="notion", label="Notion", configured=(has_env("NOTION_TOKEN") and (has_env("NOTION_DB_ID") or has_env("NOTION_PAGE_ID")))),
-        ConnectorStatus(name="slack", label="Slack", configured=(has_env("SLACK_CHANNELS") and (has_env("SLACK_TOKEN") or (has_env("SLACK_CLIENT_ID") and has_env("SLACK_CLIENT_SECRET") and has_env("SLACK_REFRESH_TOKEN")))))
+        ConnectorStatus(name="notion", label="Notion", configured=(has_env("NOTION_TOKEN") and (has_env("NOTION_DB_ID") or has_env("NOTION_PAGE_ID"))))
     ];
 }
 
@@ -690,7 +540,7 @@ def:pub sync_connectors -> list[SyncResult] {
     status = connector_status();
     configured = {s.name: s.configured for s in status};
     results = [];
-    for (name, fetch) in [("calendar", fetch_calendar), ("notion", fetch_notion), ("slack", fetch_slack)] {
+    for (name, fetch) in [("calendar", fetch_calendar), ("notion", fetch_notion)] {
         if not configured[name] {
             results.append(SyncResult(source=name, configured=False));
             continue;

@@ -39,9 +39,8 @@ The same backend powers four surfaces (plus a bonus fifth): a **web app**, a
     task breakdown**.
   - Every AI feature has a deterministic fallback, so Orbit works fully with
     **no model and no API key**.
-- **Live connectors** - pull real items from **Google Calendar**, **Notion**,
-  and **Slack** into the one unified stream (Slack messages are distilled into
-  action items by the LLM). Credentials live in a gitignored `.env`.
+- **Live connectors** - pull real items from **Google Calendar** and **Notion**
+  into the one unified stream. Credentials live in a gitignored `.env`.
 - **Insight analytics** - per-area load, completion rate, a 14-day deadline
   density chart, and completion streaks, all derived from your activity.
 - **Four surfaces, one backend** - capture from the terminal, plan on the web,
@@ -169,10 +168,10 @@ web experience as a desktop application.
 
 ---
 
-## Connect your Calendar, Notion, and Slack (optional)
+## Connect your Calendar and Notion (optional)
 
 Orbit can pull real items from external services into the one unified stream.
-All three are optional and read their credentials from `.env` (gitignored); with
+Both are optional and read their credentials from `.env` (gitignored); with
 none configured the app runs exactly as above. Copy `.env.example` to `.env`,
 fill in any subset, and click **Sync now** in Settings (or run `jac run cli sync`).
 
@@ -182,9 +181,6 @@ fill in any subset, and click **Sync now** in Settings (or run `jac run cli sync
   [notion.so/my-integrations](https://www.notion.so/my-integrations), share your
   to-do database with it, and set `NOTION_TOKEN` + `NOTION_DB_ID` (plus the
   property names if they differ from `Name` / `Due`).
-- **Slack** - set `SLACK_TOKEN` (a token with `channels:history`) and
-  `SLACK_CHANNELS` (comma-separated channel IDs). Orbit reads recent messages
-  and the LLM distills them into action items.
 
 Re-syncing updates imported items in place (keyed by source + external id)
 rather than duplicating them.
@@ -203,7 +199,7 @@ All four surfaces are thin clients over **one shared core** (`core/orbit/`):
 - `ai.jac` - capture, narration, and breakdown (`by llm`, with fallbacks).
 - `assistant.jac` - day-at-a-glance, weekly overview, suggestions, and the
   agentic `ask` (byLLM tool-calling over the graph).
-- `connectors.jac` - the Google Calendar / Notion / Slack ingestion.
+- `connectors.jac` - the Google Calendar / Notion ingestion.
 
 The **web app** and its server come up with a single `jac run`. The **CLI** and
 **mobile** and **desktop** apps all reach the same endpoints, so the planning
@@ -220,9 +216,9 @@ What makes Orbit stand out:
   read your real items before answering, and the day plan is reasoned, not
   templated - yet every feature degrades to deterministic logic with no model,
   so the app never breaks.
-- **Real integrations, done natively in Jac.** Google Calendar, Notion, and
-  Slack are pulled in through Jac's Python interop, with secrets kept in a
-  gitignored `.env`.
+- **Real integrations, done natively in Jac.** Google Calendar and Notion are
+  pulled in through Jac's Python interop, with secrets kept in a gitignored
+  `.env`.
 - **One backend, four (five) surfaces** that actually work together: capture on
   the CLI, plan on the web, triage on mobile, all live.
 
