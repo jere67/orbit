@@ -28,10 +28,20 @@ The same backend powers four surfaces (plus a bonus fifth): a **web app**, a
   any area you invent are all just items in one graph, filtered and color-coded.
 - **Runtime-addable areas** - create, rename, or archive areas from the web
   Settings panel, the CLI, or an AI capture. No code changes, ever.
-- **AI assistance (optional, graceful)** - natural-language capture ("read the
-  paper by friday"), an AI-narrated daily briefing, and one-tap task breakdown.
-  Every AI feature falls back to deterministic logic, so Orbit works fully with
-  **no model and no API key**.
+- **A planner that thinks** - the assistant layer goes well beyond a to-do list:
+  - **Day at a glance** - a reasoned, time-blocked plan for today (renders
+    instantly from your data, then an LLM refines it in the background).
+  - **Ask Orbit** - an agentic Q&A that *calls tools to read your real agenda*
+    (byLLM ReAct tool-calling) before answering "what should I do first?".
+  - **Weekly overview** - an AI outlook with the busiest day, risks, and a
+    concrete suggestion.
+  - **Proactive suggestions**, **natural-language capture**, and **one-tap
+    task breakdown**.
+  - Every AI feature has a deterministic fallback, so Orbit works fully with
+    **no model and no API key**.
+- **Live connectors** - pull real items from **Google Calendar**, **Notion**,
+  and **Slack** into the one unified stream (Slack messages are distilled into
+  action items by the LLM). Credentials live in a gitignored `.env`.
 - **Insight analytics** - per-area load, completion rate, a 14-day deadline
   density chart, and completion streaks, all derived from your activity.
 - **Four surfaces, one backend** - capture from the terminal, plan on the web,
@@ -47,17 +57,21 @@ The same backend powers four surfaces (plus a bonus fifth): a **web app**, a
   server, client toolchain, and byLLM.
 - **Mobile** additionally needs the React Native / Expo toolchain, which
   `jac setup mobile` installs for you (Node is bundled by Jac).
-- **AI features are optional.** They are off-path by default and degrade
-  gracefully. To enable the bundled local model (no API key, no cost):
+- **AI is optional and self-configuring.** Copy `.env.example` to `.env` and
+  fill in what you have; Orbit chooses the model automatically:
+  - Set `ANTHROPIC_API_KEY` in `.env` to use **Anthropic Claude** (recommended -
+    fast, best quality).
+  - Otherwise it uses the **built-in local model** (no key, no cost), which you
+    install once:
 
-  ```bash
-  jac install 'byllm[local]'
-  jac model pull gemma-4-e4b
-  ```
+    ```bash
+    jac install 'byllm[local]'
+    jac model pull gemma-4-e4b
+    ```
 
-  The model is configured in `jac.toml` under `[byllm.model]`. To use a stronger
-  cloud model instead, set `default_model = "anthropic/claude-sonnet-5"` there
-  and `export ANTHROPIC_API_KEY=...` before running.
+  With neither, every AI feature falls back to deterministic logic and the app
+  still works. (The local model runs on CPU and is slow - the day plan renders
+  instantly and the LLM refines it when ready; a cloud key makes it snappy.)
 
 ---
 
@@ -95,6 +109,8 @@ jac run cli capture "gym tomorrow and read the paper by friday"
 jac run cli done b0047d9a         # complete an item by its id prefix (shown in `list`)
 jac run cli area list             # list areas
 jac run cli area add "Thesis"     # add a new area at runtime
+jac run cli ask "what should I do first today?"   # the AI assistant, in your terminal
+jac run cli sync                  # pull from configured connectors
 ```
 
 The CLI is a real client of the running server - it calls the same HTTP
@@ -151,6 +167,28 @@ web experience as a desktop application.
 
 ---
 
+## Connect your Calendar, Notion, and Slack (optional)
+
+Orbit can pull real items from external services into the one unified stream.
+All three are optional and read their credentials from `.env` (gitignored); with
+none configured the app runs exactly as above. Copy `.env.example` to `.env`,
+fill in any subset, and click **Sync now** in Settings (or run `jac run cli sync`).
+
+- **Google Calendar** - in Calendar settings, copy the calendar's *"Secret
+  address in iCal format"* and set `ORBIT_CAL_ICS_URL`. No OAuth needed.
+- **Notion** - create an internal integration at
+  [notion.so/my-integrations](https://www.notion.so/my-integrations), share your
+  to-do database with it, and set `NOTION_TOKEN` + `NOTION_DB_ID` (plus the
+  property names if they differ from `Name` / `Due`).
+- **Slack** - set `SLACK_TOKEN` (a token with `channels:history`) and
+  `SLACK_CHANNELS` (comma-separated channel IDs). Orbit reads recent messages
+  and the LLM distills them into action items.
+
+Re-syncing updates imported items in place (keyed by source + external id)
+rather than duplicating them.
+
+---
+
 ## How the components fit together, and what makes it impressive
 
 All four surfaces are thin clients over **one shared core** (`core/orbit/`):
@@ -159,7 +197,11 @@ All four surfaces are thin clients over **one shared core** (`core/orbit/`):
 - `items.jac`, `areas.jac` - the item and runtime-area endpoints.
 - `scoring.jac`, `briefing.jac` - the deterministic urgency score and Briefing.
 - `analytics.jac` - the Insight metrics.
-- `ai.jac` - the `by llm()` features, each wrapped with a deterministic fallback.
+- `config.jac`, `llm.jac` - secrets/`.env` loading and the auto-selected model.
+- `ai.jac` - capture, narration, and breakdown (`by llm`, with fallbacks).
+- `assistant.jac` - day-at-a-glance, weekly overview, suggestions, and the
+  agentic `ask` (byLLM tool-calling over the graph).
+- `connectors.jac` - the Google Calendar / Notion / Slack ingestion.
 
 The **web app** and its server come up with a single `jac run`. The **CLI** and
 **mobile** and **desktop** apps all reach the same endpoints, so the planning
@@ -172,8 +214,13 @@ What makes Orbit stand out:
   slipping list - is the centerpiece.
 - **Runtime-extensible.** Areas are data, not code; you shape the app to your
   life without touching a source file.
-- **Reliable AI.** The JARVIS-style features are real, but they never break the
-  app - every one degrades to deterministic logic when no model is present.
+- **Genuinely agentic AI.** "Ask Orbit" uses byLLM ReAct **tool-calling** to
+  read your real items before answering, and the day plan is reasoned, not
+  templated - yet every feature degrades to deterministic logic with no model,
+  so the app never breaks.
+- **Real integrations, done natively in Jac.** Google Calendar, Notion, and
+  Slack are pulled in through Jac's Python interop, with secrets kept in a
+  gitignored `.env`.
 - **One backend, four (five) surfaces** that actually work together: capture on
   the CLI, plan on the web, triage on mobile, all live.
 
