@@ -10,33 +10,84 @@ when it is not configured, so the app runs with zero credentials.
 """
 
 import os;
+import re;
 import json;
 import hashlib;
 import urllib.request;
 import urllib.parse;
 
-import from .config { env, has_env, ai_enabled }
+import from .config { env, has_env, ai_enabled, ai_status }
 import from .llm { orbit_llm }
 import from .items { add_item, item_by_external, list_items }
 import from .areas { list_areas }
-import from .timeutil { today_str, date_of, add_days, now_iso, iso_in }
+import from .timeutil { today_str, date_of, add_days, now_iso, iso_in, days_between }
 import from .model { ConnectorStatus, SyncResult, PreviewItem, ConnectorPreview }
 
 
 def classify_areas(titles: list[str], area_keys: list[str]) -> list[str] by orbit_llm();
-sem classify_areas = "For each event/task title, pick the single best-fitting area key from area_keys - return exactly one key per title, in the same order, lowercased. Judge by meaning: course names or codes and homework -> coursework; interviews, recruiting, companies, applications -> jobs; workouts, gym, sports -> fitness; club or student-org names -> clubs; research, lab, advisor, papers -> research; TA duties, office hours, grading, discussion sections -> ta; anything unclear -> other. Only use keys from area_keys.";
+sem classify_areas = "For each event/task title, pick the single best-fitting area key from area_keys - return exactly one key per title, in the same order, lowercased. Judge by meaning, using these user specifics: AIMS is a research group (research); STRATA is the user's own startup (startup); Leetcode, HRT, Marshall Wace, Old Mission, and anything under 'Recruiting' are interview / job-hunt prep (jobs); Michigan Blockchain is a club (clubs); '(IA)' or office hours / Piazza / grading is TA work (ta); course names or codes and homework are coursework; workouts/gym/Muay Thai are fitness; anything unclear is other. Only use keys from area_keys.";
 
 
-"""A cheap keyword-based area guess for one title (fallback when no AI)."""
+"""A cheap keyword-based area guess for one title (fallback when no AI). Encodes
+the user's known orgs so it degrades gracefully without the model."""
 def _keyword_area(title: str, keys: list[str]) -> str {
     t = title.lower();
-    if any([w in t for w in ["interview", "recruit", "onsite", "application", "career", "offer"]]) and "jobs" in keys { return "jobs"; }
-    if any([w in t for w in ["muay", "gym", "lift", "workout", "run", "yoga", "climb", "fitness", "thai"]]) and "fitness" in keys { return "fitness"; }
-    if any([w in t for w in ["office hours", "grading", "grade", "discussion", "piazza", "staff meeting", " oh"]]) and "ta" in keys { return "ta"; }
+    if any([w in t for w in ["aims"]]) and "research" in keys { return "research"; }
+    if any([w in t for w in ["strata"]]) and "startup" in keys { return "startup"; }
+    if any([w in t for w in ["leetcode", "hrt", "marshall wace", "old mission", "recruit", "interview", "onsite", "application", "career", "offer"]]) and "jobs" in keys { return "jobs"; }
+    if any([w in t for w in ["blockchain", "club", "council", "society"]]) and "clubs" in keys { return "clubs"; }
+    if any([w in t for w in ["(ia)", "office hours", " oh", "grading", "grade", "discussion", "piazza", "staff meeting"]]) and "ta" in keys { return "ta"; }
+    if any([w in t for w in ["muay", "gym", "lift", "workout", "yoga", "climb", "fitness", "thai"]]) and "fitness" in keys { return "fitness"; }
     if any([w in t for w in ["research", "lab", "advisor", "paper", "baseline", "experiment"]]) and "research" in keys { return "research"; }
-    if any([w in t for w in ["club", "blockchain", "council", "society", "org"]]) and "clubs" in keys { return "clubs"; }
-    if any([w in t for w in ["eecs", "fin ", "econ", "math", "homework", " hw", "problem set", "lecture", "exam", "midterm", "reading", "course", "497"]]) and "coursework" in keys { return "coursework"; }
+    if any([w in t for w in ["eecs", "fin ", "econ", "math", "homework", " hw", "problem set", "lecture", "exam", "midterm", "reading", "course", "497", "project", "assignment"]]) and "coursework" in keys { return "coursework"; }
     return "other";
+}
+
+
+glob NOTION_MONTHS: dict = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10,
+    "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12
+};
+
+
+"""Build an ISO date from a month+day. Uses the current year, rolling to next
+year only when the date is far in the past (>120 days), so a just-passed date
+like 9/15 stays this year while a Dec-written 'Jan 5' points at next year."""
+def _iso_month_day(month: int, day: int, today: str) -> str {
+    year = int(today[:4]);
+    cand = str(year) + "-" + str(month).zfill(2) + "-" + str(day).zfill(2);
+    try {
+        if days_between(cand, today) > 120 {
+            cand = str(year + 1) + "-" + str(month).zfill(2) + "-" + str(day).zfill(2);
+        }
+    } except Exception as e {
+        _ = e;
+    }
+    return cand;
+}
+
+
+"""Pull the first date out of freeform text: ISO (2026-09-28), a month name
+('September 28'), or M/D ('9/15'). Returns '' when there is none."""
+def _parse_freeform_date(text: str, today: str) -> str {
+    iso = re.search("(\\d{4}-\\d{2}-\\d{2})", text);
+    if iso {
+        return iso.group(1);
+    }
+    named = re.search("(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\.?\\s+(\\d{1,2})", text.lower());
+    if named {
+        mo = NOTION_MONTHS.get(named.group(1)) or 0;
+        if mo > 0 {
+            return _iso_month_day(mo, int(named.group(2)), today);
+        }
+    }
+    md = re.search("\\b(\\d{1,2})/(\\d{1,2})\\b", text);
+    if md {
+        return _iso_month_day(int(md.group(1)), int(md.group(2)), today);
+    }
+    return "";
 }
 
 
@@ -45,7 +96,11 @@ keyword rules. Always returns one area key per title (never crashes)."""
 def _infer_areas(titles: list[str]) -> list[str] {
     keys = [a.key for a in list_areas() if not a.archived];
     capped = titles[:60];
-    if ai_enabled() and capped {
+    # Only call the model when it's a hosted (cloud) one. The local llama.cpp
+    # backend can abort() on a large batched classification (uncatchable native
+    # crash), so on local we use the deterministic keyword rules below - which
+    # already encode the user's known orgs.
+    if ai_status() == "cloud" and capped {
         try {
             guessed = classify_areas([t[:100] for t in capped], keys);
             if len(guessed) == len(capped) {
@@ -316,14 +371,42 @@ def _notion_db_tasks(token: str, db: str, area: str) -> list[ExternalItem] {
 }
 
 
-"""Walk a page/block's children and collect every UNCHECKED to-do checklist
-item, recursing into nested blocks (bounded). This handles a plain Notion page
-that is just a checklist, rather than a database."""
-def _notion_page_todos(token: str, block_id: str, area: str, depth: int) -> list[ExternalItem] {
+"""The plain text of a block's rich_text (whatever text-bearing type it is)."""
+def _block_text(block: dict, btype: str) -> str {
+    body = block.get(btype) or {};
+    rich = body.get("rich_text") or [];
+    return " ".join([(t.get("plain_text") or "") for t in rich]).strip();
+}
+
+
+"""Decide whether a freeform paragraph/bullet line is a real task worth
+importing: it has an explicit date, or a 'Heading: something' shape with real
+content after the colon (filters notes like 'Week: 37' or 'player vs player')."""
+def _looks_like_task(text: str, due: str) -> bool {
+    if len(text) < 4 {
+        return False;
+    }
+    if due {
+        return True;
+    }
+    if ":" in text {
+        after = text.split(":", 1)[1].strip();
+        return bool(after) and not after.isdigit();
+    }
+    return False;
+}
+
+
+"""Walk a Notion page and collect tasks from BOTH shapes: unchecked to-do
+checkboxes (a habit/day list, deduped by title) and freeform paragraph/bullet
+lines that are dated or 'Heading: task' shaped (the detailed course breakdowns).
+Recurses into nested blocks (bounded)."""
+def _notion_page_items(token: str, block_id: str, area: str, depth: int, seen: set) -> list[ExternalItem] {
     out = [];
-    if depth > 3 {
+    if depth > 4 {
         return out;
     }
+    today = today_str();
     url = _notion_base() + "/v1/blocks/" + block_id + "/children?page_size=100";
     try {
         data = _http_get(url, _notion_headers(token));
@@ -332,24 +415,41 @@ def _notion_page_todos(token: str, block_id: str, area: str, depth: int) -> list
         return out;
     }
     for block in (data.get("results") or []) {
-        if block.get("type") == "to_do" {
+        btype = block.get("type");
+        if btype == "to_do" {
             todo = block.get("to_do") or {};
             if not todo.get("checked") {
-                rich = todo.get("rich_text") or [];
-                title = " ".join([(t.get("plain_text") or "") for t in rich]).strip();
-                if title {
-                    bid = block.get("id") or _hash_id(title);
+                title = _block_text(block, "to_do");
+                key = title.lower();
+                if title and key not in seen {
+                    seen.add(key);
                     out.append(
                         ExternalItem(
                             title=title, source="notion", area_key=area, kind="TASK",
-                            due="", external_id=bid
+                            due="", external_id="notion-todo:" + _hash_id(key)
+                        )
+                    );
+                }
+            }
+        } elif btype == "paragraph" or btype == "bulleted_list_item" or btype == "numbered_list_item" {
+            text = _block_text(block, btype);
+            due = _parse_freeform_date(text, today);
+            if _looks_like_task(text, due) {
+                key = text.lower();
+                if key not in seen {
+                    seen.add(key);
+                    kind = "DEADLINE" if due else "TASK";
+                    out.append(
+                        ExternalItem(
+                            title=text, source="notion", area_key=area, kind=kind,
+                            due=due, external_id="notion-task:" + _hash_id(key)
                         )
                     );
                 }
             }
         }
         if block.get("has_children") {
-            out = out + _notion_page_todos(token, block.get("id"), area, depth + 1);
+            out = out + _notion_page_items(token, block.get("id"), area, depth + 1, seen);
         }
     }
     return out;
@@ -370,7 +470,7 @@ def fetch_notion -> list[ExternalItem] {
     items = [];
     page = env("NOTION_PAGE_ID");
     if page {
-        items = _notion_page_todos(token, page, area, 0);
+        items = _notion_page_items(token, page, area, 0, set());
     } else {
         db = env("NOTION_DB_ID");
         if db {

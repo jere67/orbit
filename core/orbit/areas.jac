@@ -15,6 +15,7 @@ glob DEFAULT_AREAS: list[dict[str, str]] = [
     {"key": "ta", "label": "TA", "color": "#10b981", "icon": "users"},
     {"key": "clubs", "label": "Clubs", "color": "#ec4899", "icon": "sparkles"},
     {"key": "fitness", "label": "Fitness", "color": "#ef4444", "icon": "dumbbell"},
+    {"key": "startup", "label": "Startup", "color": "#14b8a6", "icon": "rocket"},
     {"key": "other", "label": "Other", "color": "#64748b", "icon": "circle"}
 ];
 
