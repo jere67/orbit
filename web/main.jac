@@ -19,7 +19,8 @@ import from "@hugeicons/core-free-icons" {
     SparklesIcon, AiMagicIcon, Sun03Icon, DashboardSquare01Icon,
     AnalyticsUpIcon, Settings02Icon, Add01Icon, ArrowRight01Icon, Alert02Icon,
     MoreHorizontalIcon, Delete02Icon, Tick02Icon, Fire02Icon, RefreshIcon,
-    Link01Icon, Archive02Icon, Target02Icon, InboxIcon
+    Link01Icon, Archive02Icon, Target02Icon, InboxIcon, BubbleChatIcon,
+    FilterIcon, SentIcon
 }
 
 import from ..components.ui.button { Button }
@@ -38,7 +39,7 @@ import from core.orbit.items {
     list_items, add_item, complete_item, set_status, delete_item,
     list_subtasks, add_subtask, toggle_subtask
 }
-import from core.orbit.areas { list_areas, add_area, archive_area }
+import from core.orbit.areas { list_areas, add_area, archive_area, update_area }
 import from core.orbit.ai { capture, breakdown_item, fast_briefing }
 import from core.orbit.analytics { get_analytics }
 import from core.orbit.assistant {
@@ -109,9 +110,11 @@ def:pub app -> JsxElement {
         outlook_busy: bool = False,
         connectors: list = [],
         syncing: bool = False,
-        ask_q: str = "",
-        ask_a: str = "",
-        ask_busy: bool = False,
+        chat_input: str = "",
+        chat_msgs: list = [],
+        chat_busy: bool = False,
+        filter_area: str = "all",
+        filter_priority: str = "all",
         hovered_density: str = "",
         ai_state: str = "off";
 
@@ -138,15 +141,31 @@ def:pub app -> JsxElement {
         await load_ai();
     }
 
-    async def do_ask {
-        q = ask_q.strip();
-        if not q {
+    async def do_chat_send {
+        q = chat_input.strip();
+        if not q or chat_busy {
             return;
         }
-        ask_busy = True;
-        ask_a = "";
-        ask_a = await ask(q);
-        ask_busy = False;
+        chat_msgs = chat_msgs + [{"role": "user", "text": q}];
+        chat_input = "";
+        chat_busy = True;
+        answer = await ask(q);
+        chat_msgs = chat_msgs + [{"role": "assistant", "text": answer}];
+        chat_busy = False;
+    }
+
+    def ask_example(q: str) {
+        chat_input = q;
+    }
+
+    async def do_recolor(key: str, color: str) {
+        for a in areas {
+            if a.key == key {
+                a.color = color;
+            }
+        }
+        areas = [x for x in areas];
+        await update_area(key=key, color=color);
     }
 
     async def do_sync {
@@ -280,6 +299,21 @@ def:pub app -> JsxElement {
     def area_color(key: str) -> str {
         a = area_for(key);
         return a.color if a is not None else "#ff5c45";
+    }
+
+    """Items for the Agenda tab: filtered by the active area/priority, sorted by due date (soonest first, undated last)."""
+    def agenda_items -> list {
+        rows = [];
+        for it in items {
+            if filter_area != "all" and it.area_key != filter_area {
+                continue;
+            }
+            if filter_priority != "all" and prio_label(it.priority) != filter_priority {
+                continue;
+            }
+            rows.append(it);
+        }
+        return sorted(rows, key=lambda (it: Item) -> str { return it.due if it.due else "9999-99-99"; });
     }
 
     # --- Presentational pieces ------------------------------------------------
@@ -556,38 +590,66 @@ def:pub app -> JsxElement {
             </div>;
     }
 
-    def render_ask -> JsxElement {
+    def render_chat -> JsxElement {
         return
-            <div className="ink-card rounded-2xl p-6">
-                <div className="mb-1 flex items-center gap-2.5">
-                    <span className="flex size-8 items-center justify-center rounded-lg" style={{"background": "rgba(255,92,69,0.16)", "color": "var(--primary)"}}>
-                        <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-4" />
+            <div className="flex min-h-[68vh] flex-col">
+                <div className="mb-5 flex items-center gap-2.5">
+                    <span className="flex size-9 items-center justify-center rounded-lg bg-primary/12 text-primary">
+                        <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-5" />
                     </span>
-                    <span className="font-display text-base" style={{"color": "var(--ink-fg)"}}>Ask Orbit</span>
+                    <div>
+                        <h1 className="font-display text-xl text-foreground">Chat with Orbit</h1>
+                        <p className="text-xs text-muted-foreground">It reads your real agenda before it answers.</p>
+                    </div>
                 </div>
-                <p className="ink-muted mb-4 text-sm">It reads your real agenda before it answers.</p>
-                <div className="flex gap-2">
+
+                <div className="flex-1 space-y-4">
+                    {len(chat_msgs) == 0 and not chat_busy and
+                        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-border py-14 text-center">
+                            <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                                <HugeiconsIcon icon={AiMagicIcon} strokeWidth={2} className="size-6" />
+                            </span>
+                            <p className="text-sm text-muted-foreground">Ask about your week, your deadlines, or what to do first.</p>
+                            <div className="flex flex-wrap justify-center gap-2">
+                                {[
+                                    <button key={ex}
+                                            onClick={lambda (e: MouseEvent) { ask_example(ex); }}
+                                            className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-foreground transition-colors hover:border-primary/50">
+                                        {ex}
+                                    </button> for ex in ["What should I focus on before Friday?", "Summarize my research tasks", "What's slipping?"]
+                                ]}
+                            </div>
+                        </div>}
+                    {[
+                        <div key={str(i)} className={"flex " + ("justify-end" if m["role"] == "user" else "justify-start")}>
+                            {m["role"] == "assistant" and
+                                <span className="mr-2 mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/12 text-primary">
+                                    <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-3.5" />
+                                </span>}
+                            <div className={"max-w-[80%] whitespace-pre-line rounded-2xl px-4 py-2.5 text-sm leading-relaxed " + ("bg-primary text-primary-foreground" if m["role"] == "user" else "border border-border bg-card text-foreground")}>
+                                {m["text"]}
+                            </div>
+                        </div> for (i, m) in enumerate(chat_msgs)
+                    ]}
+                    {chat_busy and
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-4 animate-pulse text-primary" />
+                            Orbit is thinking…
+                        </div>}
+                </div>
+
+                <div className="sticky bottom-4 mt-6 flex items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-[0_2px_12px_rgba(36,32,27,0.06)]">
                     <input
-                        className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none focus-visible:border-[color:var(--primary)]"
-                        style={{"background": "rgba(255,255,255,0.06)", "borderColor": "rgba(255,255,255,0.12)", "color": "var(--ink-fg)"}}
-                        value={ask_q}
-                        placeholder="What should I focus on before Friday?"
-                        onChange={lambda (e: ChangeEvent) { ask_q = e.target.value; }}
-                        onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { do_ask(); } }} />
-                    <Button onClick={lambda (e: MouseEvent) { do_ask(); }} disabled={ask_busy}>
-                        {ask_busy and "..."}
-                        {not ask_busy and
-                            <>
-                                Ask
-                                <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={2} className="size-4" />
-                            </>}
+                        className="flex-1 bg-transparent px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                        value={chat_input}
+                        placeholder="Ask Orbit anything…"
+                        onChange={lambda (e: ChangeEvent) { chat_input = e.target.value; }}
+                        onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { do_chat_send(); } }} />
+                    <Button onClick={lambda (e: MouseEvent) { do_chat_send(); }} disabled={chat_busy}>
+                        <HugeiconsIcon icon={SentIcon} strokeWidth={2} className="size-4" />
+                        Send
                     </Button>
                 </div>
-                {ask_a and
-                    <p className="mt-4 whitespace-pre-line rounded-lg p-3 text-sm leading-relaxed"
-                       style={{"background": "rgba(255,255,255,0.05)", "color": "var(--ink-fg)"}}>
-                        {ask_a}
-                    </p>}
             </div>;
     }
 
@@ -657,6 +719,7 @@ def:pub app -> JsxElement {
                 </div>
                 <nav className="flex flex-col gap-1">
                     {nav_item("briefing", "Briefing", DashboardSquare01Icon)}
+                    {nav_item("chat", "Chat", BubbleChatIcon)}
                     {nav_item("agenda", "Agenda", InboxIcon)}
                     {nav_item("insight", "Insight", AnalyticsUpIcon)}
                     {nav_item("settings", "Settings", Settings02Icon)}
@@ -682,6 +745,7 @@ def:pub app -> JsxElement {
                         <Tabs value={tab} onValueChange={lambda (v: str) { tab = v; }}>
                             <TabsList className="w-full">
                                 {tab_trigger("briefing", "Briefing", DashboardSquare01Icon)}
+                                {tab_trigger("chat", "Chat", BubbleChatIcon)}
                                 {tab_trigger("agenda", "Agenda", InboxIcon)}
                                 {tab_trigger("insight", "Insight", AnalyticsUpIcon)}
                                 {tab_trigger("settings", "Settings", Settings02Icon)}
@@ -691,6 +755,8 @@ def:pub app -> JsxElement {
                 </header>
 
             <main className="mx-auto w-full max-w-5xl px-6 pb-28 pt-10">
+                {tab != "chat" and
+                <>
                 <div className="hero-rise mb-6">
                     <h1 className="font-display text-[2rem] leading-[1.1] text-foreground sm:text-[2.6rem]">
                         {brief.headline if brief is not None else "Bringing your day into focus."}
@@ -720,9 +786,28 @@ def:pub app -> JsxElement {
                             </>}
                     </Button>
                 </div>
+                </>}
 
                 {tab == "briefing" and brief is not None and
                     <div className="space-y-8">
+                        {render_dayplan()}
+                        {(len(suggestions_list) > 0 or len(brief.flags) > 0) and
+                            <div className="space-y-2">
+                                {[
+                                    <div key={s} className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
+                                        <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="mt-0.5 size-4 shrink-0 text-primary" />
+                                        <span className="text-foreground">{s}</span>
+                                    </div> for s in suggestions_list
+                                ]}
+                                {[
+                                    <div key={f} className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm"
+                                         style={{"background": "rgba(176,116,29,0.1)", "color": "var(--clay)", "border": "1px solid rgba(176,116,29,0.22)"}}>
+                                        <HugeiconsIcon icon={Alert02Icon} strokeWidth={2} className="mt-0.5 size-4 shrink-0" />
+                                        <span>{f}</span>
+                                    </div> for f in brief.flags
+                                ]}
+                            </div>
+                        }
                         {render_overdue()}
                         <section>
                             <div className="mb-4 flex items-center gap-2.5">
@@ -732,32 +817,10 @@ def:pub app -> JsxElement {
                             </div>
                             {render_week_board()}
                         </section>
-                        <div className="space-y-8">
-                            {len(brief.flags) > 0 and
-                                <div className="space-y-2">
-                                    {[
-                                        <div key={f} className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm"
-                                             style={{"background": "rgba(176,116,29,0.1)", "color": "var(--clay)", "border": "1px solid rgba(176,116,29,0.22)"}}>
-                                            <HugeiconsIcon icon={Alert02Icon} strokeWidth={2} className="mt-0.5 size-4 shrink-0" />
-                                            <span>{f}</span>
-                                        </div> for f in brief.flags
-                                    ]}
-                                </div>
-                            }
-                            {render_dayplan()}
-                            {render_ask()}
-                            {len(suggestions_list) > 0 and
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                    {[
-                                        <div key={s} className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
-                                            <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="mt-0.5 size-4 shrink-0 text-primary" />
-                                            <span className="text-foreground">{s}</span>
-                                        </div> for s in suggestions_list
-                                    ]}
-                                </div>}
-                        </div>
                     </div>
                 }
+
+                {tab == "chat" and render_chat()}
 
                 {tab == "agenda" and
                     <div className="space-y-5">
@@ -800,6 +863,39 @@ def:pub app -> JsxElement {
                                 </Button>
                             </div>
                         </div>
+                        {len(items) > 0 and
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <HugeiconsIcon icon={FilterIcon} strokeWidth={2} className="size-3.5" />
+                                    Filter
+                                </span>
+                                <Select value={filter_area} onValueChange={lambda (v: str) { filter_area = v; }}>
+                                    <SelectTrigger className="h-8 w-36"><SelectValue placeholder="Area" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectGroup>
+                                            <SelectItem value="all">All areas</SelectItem>
+                                            {[<SelectItem key={a.key} value={a.key}>{a.label}</SelectItem> for a in areas if not a.archived]}
+                                        </SelectGroup>
+                                    </SelectContent>
+                                </Select>
+                                <Select value={filter_priority} onValueChange={lambda (v: str) { filter_priority = v; }}>
+                                    <SelectTrigger className="h-8 w-32"><SelectValue placeholder="Priority" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectGroup>
+                                            <SelectItem value="all">Any priority</SelectItem>
+                                            <SelectItem value="Critical">Critical</SelectItem>
+                                            <SelectItem value="High">High</SelectItem>
+                                            <SelectItem value="Med">Med</SelectItem>
+                                            <SelectItem value="Low">Low</SelectItem>
+                                        </SelectGroup>
+                                    </SelectContent>
+                                </Select>
+                                {(filter_area != "all" or filter_priority != "all") and
+                                    <Button variant="ghost" size="sm" onClick={lambda (e: MouseEvent) { filter_area = "all"; filter_priority = "all"; }}>
+                                        Clear
+                                    </Button>}
+                                <span className="ml-auto text-xs text-muted-foreground">sorted by deadline</span>
+                            </div>}
                         <div className="space-y-2.5">
                             {len(items) == 0 and
                                 <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border p-12 text-center">
@@ -809,7 +905,9 @@ def:pub app -> JsxElement {
                                     <p className="text-sm text-muted-foreground">Your agenda is empty.</p>
                                     <Button onClick={lambda (e: MouseEvent) { do_seed(); }}>Load a sample week</Button>
                                 </div>}
-                            {[render_item(it) for it in items]}
+                            {len(items) > 0 and len(agenda_items()) == 0 and
+                                <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No items match these filters.</p>}
+                            {[render_item(it) for it in agenda_items()]}
                         </div>
                     </div>
                 }
@@ -942,7 +1040,12 @@ def:pub app -> JsxElement {
                             {[
                                 <div key={a.key}
                                      className={"flex items-center gap-3 rounded-xl border border-border bg-card p-3.5 " + ("opacity-55" if a.archived else "")}>
-                                    <span className="size-4 shrink-0 rounded-full" style={{"background": a.color}} />
+                                    <label className="relative size-5 shrink-0 cursor-pointer rounded-full ring-1 ring-black/10"
+                                           title="Change color" style={{"background": a.color}}>
+                                        <input type="color" value={a.color}
+                                               className="absolute inset-0 size-full cursor-pointer opacity-0"
+                                               onChange={lambda (e: ChangeEvent) { do_recolor(a.key, e.target.value); }} />
+                                    </label>
                                     <span className="flex-1 text-sm font-medium text-foreground">{a.label}</span>
                                     <span className="text-xs text-muted-foreground">{a.key}</span>
                                     {a.archived and
