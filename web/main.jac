@@ -45,6 +45,7 @@ import from core.orbit.assistant {
     quick_dayplan, day_at_a_glance, quick_suggestions, suggestions, weekly_overview, ask
 }
 import from core.orbit.connectors { connector_status, sync_connectors }
+import from core.orbit.config { ai_status }
 import from core.orbit.demo { seed_demo }
 import from core.orbit.model { Item, Area, Priority, Status, ItemKind, Briefing, Analytics, DayPlan, WeekOutlook, DayBucket, DensityDay }
 
@@ -111,7 +112,8 @@ def:pub app -> JsxElement {
         ask_q: str = "",
         ask_a: str = "",
         ask_busy: bool = False,
-        hovered_density: str = "";
+        hovered_density: str = "",
+        ai_state: str = "off";
 
     async def reload {
         items = await list_items();
@@ -119,6 +121,7 @@ def:pub app -> JsxElement {
         brief = await fast_briefing();
         analytics = await get_analytics();
         connectors = await connector_status();
+        ai_state = await ai_status();
     }
 
     async def load_ai {
@@ -613,20 +616,82 @@ def:pub app -> JsxElement {
             </TabsTrigger>;
     }
 
+    def nav_item(id: str, label: str, icon: any) -> JsxElement {
+        active = tab == id;
+        return
+            <button key={id}
+                    onClick={lambda (e: MouseEvent) { tab = id; }}
+                    className={"relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors " + ("bg-primary/10 text-primary" if active else "text-foreground/70 hover:bg-foreground/[0.05] hover:text-foreground")}>
+                {active and <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" />}
+                <HugeiconsIcon icon={icon} strokeWidth={2} className="size-[1.1rem]" />
+                <span>{label}</span>
+            </button>;
+    }
+
+    def ai_footer -> JsxElement {
+        dot = "#8a8073";
+        text = "No AI model";
+        if ai_state == "cloud" {
+            dot = "#3f9e5a";
+            text = "Cloud AI";
+        } elif ai_state == "local" {
+            dot = "var(--clay)";
+            text = "Local model";
+        }
+        return
+            <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground">
+                <span className="size-2 shrink-0 rounded-full" style={{"background": dot}} />
+                <span>{text}</span>
+            </div>;
+    }
+
+    def render_sidebar -> JsxElement {
+        return
+            <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-border bg-[#efeae0] px-3 py-5 md:flex">
+                <div className="mb-6 flex items-center gap-2.5 px-2">
+                    <span className="orbit-mark size-6 rounded-full" />
+                    <div className="flex flex-col leading-tight">
+                        <span className="font-display text-[1.05rem] text-foreground">Orbit</span>
+                        <span className="text-[0.7rem] text-muted-foreground">the agenda that thinks</span>
+                    </div>
+                </div>
+                <nav className="flex flex-col gap-1">
+                    {nav_item("briefing", "Briefing", DashboardSquare01Icon)}
+                    {nav_item("agenda", "Agenda", InboxIcon)}
+                    {nav_item("insight", "Insight", AnalyticsUpIcon)}
+                    {nav_item("settings", "Settings", Settings02Icon)}
+                </nav>
+                <div className="mt-auto border-t border-border pt-3">
+                    {ai_footer()}
+                </div>
+            </aside>;
+    }
+
     # --- Layout ---------------------------------------------------------------
 
     return
-        <div className="relative min-h-screen">
-            <header className="glass sticky top-0 z-20 border-b border-border">
-                <div className="mx-auto flex max-w-6xl items-center gap-2.5 px-4 py-3.5">
-                    <span className="orbit-mark size-6 rounded-full" />
-                    <span className="font-display text-[1.05rem] text-foreground">Orbit</span>
-                    <span className="hidden text-sm text-muted-foreground sm:inline">· the agenda that thinks</span>
-                </div>
-            </header>
+        <div className="flex min-h-screen">
+            {render_sidebar()}
+            <div className="min-w-0 flex-1">
+                <header className="glass sticky top-0 z-20 border-b border-border md:hidden">
+                    <div className="flex items-center gap-2.5 px-4 pt-3">
+                        <span className="orbit-mark size-6 rounded-full" />
+                        <span className="font-display text-[1.05rem] text-foreground">Orbit</span>
+                    </div>
+                    <div className="px-3 py-2">
+                        <Tabs value={tab} onValueChange={lambda (v: str) { tab = v; }}>
+                            <TabsList className="w-full">
+                                {tab_trigger("briefing", "Briefing", DashboardSquare01Icon)}
+                                {tab_trigger("agenda", "Agenda", InboxIcon)}
+                                {tab_trigger("insight", "Insight", AnalyticsUpIcon)}
+                                {tab_trigger("settings", "Settings", Settings02Icon)}
+                            </TabsList>
+                        </Tabs>
+                    </div>
+                </header>
 
-            <main className="mx-auto max-w-6xl px-4 pb-28 pt-10">
-                <div className="hero-rise mb-6 max-w-3xl">
+            <main className="mx-auto w-full max-w-5xl px-6 pb-28 pt-10">
+                <div className="hero-rise mb-6">
                     <h1 className="font-display text-[2rem] leading-[1.1] text-foreground sm:text-[2.6rem]">
                         {brief.headline if brief is not None else "Bringing your day into focus."}
                     </h1>
@@ -635,7 +700,7 @@ def:pub app -> JsxElement {
                     </p>
                 </div>
 
-                <div className="hero-rise hero-rise-2 mb-8 flex max-w-3xl items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-[0_2px_10px_rgba(36,32,27,0.05)]">
+                <div className="hero-rise hero-rise-2 mb-8 flex items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-[0_2px_10px_rgba(36,32,27,0.05)]">
                     <span className="pl-1.5 text-primary">
                         <HugeiconsIcon icon={AiMagicIcon} strokeWidth={2} className="size-5" />
                     </span>
@@ -656,19 +721,9 @@ def:pub app -> JsxElement {
                     </Button>
                 </div>
 
-                <Tabs value={tab} onValueChange={lambda (v: str) { tab = v; }} className="hero-rise hero-rise-3 mb-7 max-w-3xl">
-                    <TabsList className="w-full">
-                        {tab_trigger("briefing", "Briefing", DashboardSquare01Icon)}
-                        {tab_trigger("agenda", "Agenda", InboxIcon)}
-                        {tab_trigger("insight", "Insight", AnalyticsUpIcon)}
-                        {tab_trigger("settings", "Settings", Settings02Icon)}
-                    </TabsList>
-                </Tabs>
-
                 {tab == "briefing" and brief is not None and
                     <div className="space-y-8">
-                        {len(brief.slipping) > 0 and
-                            <div className="max-w-3xl">{render_overdue()}</div>}
+                        {render_overdue()}
                         <section>
                             <div className="mb-4 flex items-center gap-2.5">
                                 <span className="h-4 w-1 rounded-full bg-primary" />
@@ -677,7 +732,7 @@ def:pub app -> JsxElement {
                             </div>
                             {render_week_board()}
                         </section>
-                        <div className="max-w-3xl space-y-8">
+                        <div className="space-y-8">
                             {len(brief.flags) > 0 and
                                 <div className="space-y-2">
                                     {[
@@ -705,7 +760,7 @@ def:pub app -> JsxElement {
                 }
 
                 {tab == "agenda" and
-                    <div className="max-w-3xl space-y-5">
+                    <div className="space-y-5">
                         <div className="rounded-2xl border border-border bg-card p-3">
                             <Input className="w-full border-0 bg-transparent px-1 text-base shadow-none focus-visible:ring-0" value={new_title}
                                    placeholder="Add an item..."
@@ -760,7 +815,7 @@ def:pub app -> JsxElement {
                 }
 
                 {tab == "insight" and analytics is not None and
-                    <div className="max-w-3xl space-y-8">
+                    <div className="space-y-8">
                         <div className="ink-card rounded-2xl p-6">
                             <div className="mb-4 flex items-center justify-between">
                                 <div className="flex items-center gap-2.5">
@@ -844,7 +899,7 @@ def:pub app -> JsxElement {
                 }
 
                 {tab == "settings" and
-                    <div className="max-w-3xl space-y-5">
+                    <div className="space-y-5">
                         <Card>
                             <CardHeader>
                                 <div className="flex items-center justify-between">
@@ -906,5 +961,6 @@ def:pub app -> JsxElement {
                     </div>
                 }
             </main>
+            </div>
         </div>;
 }

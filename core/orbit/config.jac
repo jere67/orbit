@@ -89,3 +89,22 @@ def ai_enabled -> bool {
     }
     return bool(os.getenv("ORBIT_LOCAL_AI"));
 }
+
+
+"""A short label for the current AI mode, for the UI: 'cloud', 'local', or 'off'.
+
+'off' still means fully functional - Orbit falls back to deterministic logic."""
+def:pub ai_status -> str {
+    ensure_env();
+    if os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY") {
+        return "cloud";
+    }
+    forced = os.getenv("ORBIT_MODEL");
+    if forced and not forced.startswith("local:") {
+        return "cloud";
+    }
+    if os.getenv("ORBIT_LOCAL_AI") {
+        return "local";
+    }
+    return "off";
+}
