@@ -1,105 +1,116 @@
-import argparse;
-import asyncio;
-import sys;
-import from .commands.common { EXIT_USAGE, warn }
-import from .commands.docs { run_docs }
-import from .commands.feed { run_feed, run_post }
-import from .commands.score { run_score }
+"""The Orbit command-line surface: frictionless capture and glance from the
+terminal. All commands talk to a running Orbit server through the bridge."""
 
-glob PROG: str = "jacorg",
-     DEFAULT_LIMIT: int = 20;
+import argparse;
+import sys;
+import from cli.commands.common { EXIT_USAGE, warn }
+import from cli.commands.actions {
+    run_add, run_capture, run_list, run_today, run_week, run_done, run_area
+}
+
+glob PROG: str = "orbit";
+
 
 obj Invocation {
     has command: str = "",
+        title: str = "",
+        area: str = "",
+        due: str = "",
+        priority: str = "MED",
+        kind: str = "TASK",
+        effort: int = 30,
+        text: str = "",
+        id: str = "",
         action: str = "",
-        repo: str = "",
-        as_json: bool = False,
-        limit: int = DEFAULT_LIMIT,
-        query: str = "",
-        text: str = "";
+        label: str = "";
 }
+
 
 def build_parser -> argparse.ArgumentParser {
     parser = argparse.ArgumentParser(
         prog=PROG,
-        description="The command-line face of jaclang.org. "
-        "`score` runs offline; the rest talk to a running site."
+        description="Orbit - the agenda that thinks. Talks to a running Orbit server."
     );
-    commands = parser.add_subparsers(
-        dest="command", metavar="<command>", required=True
-    );
-    scorer = commands.add_parser(
-        "score", help="score a GitHub repo against the ninja rubric, offline"
-    );
-    scorer.add_argument("repo", help="owner/name or a github.com URL");
-    scorer.add_argument(
-        "--json",
-        dest="as_json",
-        action="store_true",
-        help="print the breakdown as JSON"
-    );
-    docs = commands.add_parser("docs", help="the docs graph of a running site");
-    docs.add_argument(
-        "action",
-        choices=["sync", "status"],
-        help="sync: ask the site to ingest its bundled docs; status: what the graph holds"
-    );
-    feed = commands.add_parser(
-        "feed", help="read your JacYac feed from a running site"
-    );
-    feed.add_argument(
-        "--limit",
-        `type=int,
-        `default=DEFAULT_LIMIT,
-        help="how many tweets to show (default " + str(DEFAULT_LIMIT) + ")"
-    );
-    feed.add_argument(
-        "--search", dest="query", `default="", help="only tweets containing this text"
-    );
-    post = commands.add_parser("post", help="post to JacYac through a running site");
-    post.add_argument("text", help="what to say");
+    commands = parser.add_subparsers(dest="command", metavar="<command>", required=True);
+
+    add = commands.add_parser("add", help="add an item");
+    add.add_argument("title", help="the item title");
+    add.add_argument("--area", `default="other", help="area key (see `orbit area list`)");
+    add.add_argument("--due", `default="", help="due date YYYY-MM-DD");
+    add.add_argument("--priority", `default="MED", help="LOW / MED / HIGH / CRITICAL");
+    add.add_argument("--kind", `default="TASK", help="TASK / DEADLINE / EVENT / SESSION");
+    add.add_argument("--effort", `type=int, `default=30, help="estimated minutes");
+
+    cap = commands.add_parser("capture", help="add items from natural language");
+    cap.add_argument("text", help="e.g. 'read the paper by friday'");
+
+    ls = commands.add_parser("list", help="list items");
+    ls.add_argument("--area", `default="", help="only this area key");
+
+    commands.add_parser("today", help="today's briefing and items");
+    commands.add_parser("week", help="the week ahead, grouped by day");
+
+    done = commands.add_parser("done", help="complete an item by id prefix");
+    done.add_argument("id", help="id prefix shown by `orbit list`");
+
+    area = commands.add_parser("area", help="manage areas");
+    area.add_argument("action", choices=["list", "add"], help="list or add");
+    area.add_argument("label", nargs="?", `default="", help="area name for `add`");
+
     return parser;
 }
 
+
 def parse_args(argv: list[str]) -> Invocation {
-    parser = build_parser();
-    ns = parser.parse_args(argv);
-    inv = Invocation(
+    ns = build_parser().parse_args(argv);
+    return Invocation(
         command=str(getattr(ns, "command", "") or ""),
+        title=str(getattr(ns, "title", "") or ""),
+        area=str(getattr(ns, "area", "") or ""),
+        due=str(getattr(ns, "due", "") or ""),
+        priority=str(getattr(ns, "priority", "MED") or "MED"),
+        kind=str(getattr(ns, "kind", "TASK") or "TASK"),
+        effort=int(getattr(ns, "effort", 30)),
+        text=str(getattr(ns, "text", "") or ""),
+        id=str(getattr(ns, "id", "") or ""),
         action=str(getattr(ns, "action", "") or ""),
-        repo=str(getattr(ns, "repo", "") or ""),
-        as_json=bool(getattr(ns, "as_json", False)),
-        limit=int(getattr(ns, "limit", DEFAULT_LIMIT)),
-        query=str(getattr(ns, "query", "") or ""),
-        text=str(getattr(ns, "text", "") or "")
+        label=str(getattr(ns, "label", "") or "")
     );
-    if inv.limit < 1 {
-        parser.error("--limit must be at least 1");
-    }
-    return inv;
 }
 
-async def dispatch(inv: Invocation) -> int {
-    if inv.command == "score" {
-        return run_score(inv.repo, inv.as_json);
+
+def dispatch(inv: Invocation) -> int {
+    if inv.command == "add" {
+        return run_add(inv.title, inv.area, inv.due, inv.priority, inv.kind, inv.effort);
     }
-    if inv.command == "docs" {
-        return await run_docs(inv.action);
+    if inv.command == "capture" {
+        return run_capture(inv.text);
     }
-    if inv.command == "feed" {
-        return await run_feed(inv.limit, inv.query);
+    if inv.command == "list" {
+        return run_list(inv.area);
     }
-    if inv.command == "post" {
-        return await run_post(inv.text);
+    if inv.command == "today" {
+        return run_today();
     }
-    warn("jacorg: unknown command " + inv.command);
+    if inv.command == "week" {
+        return run_week();
+    }
+    if inv.command == "done" {
+        return run_done(inv.id);
+    }
+    if inv.command == "area" {
+        return run_area(inv.action, inv.label);
+    }
+    warn("orbit: unknown command " + inv.command);
     return EXIT_USAGE;
 }
 
-async def main(argv: list[str]) -> int {
-    return await dispatch(parse_args(argv));
+
+def main(argv: list[str]) -> int {
+    return dispatch(parse_args(argv));
 }
 
+
 with entry:__main__ {
-    sys.`exit(asyncio.run(main(sys.argv[1:])));
+    sys.`exit(main(sys.argv[1:]));
 }
