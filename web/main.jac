@@ -14,6 +14,7 @@ Bricolage Grotesque / Instrument Sans.
 import "./styles/global.css";
 import "./styles.css";
 
+import from "marked" { marked }
 import from "@hugeicons/react" { HugeiconsIcon }
 import from "@hugeicons/core-free-icons" {
     SparklesIcon, AiMagicIcon, Sun03Icon, DashboardSquare01Icon,
@@ -636,9 +637,13 @@ def:pub app -> JsxElement {
                                         <span className="mr-2 mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/12 text-primary">
                                             <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-3.5" />
                                         </span>}
-                                    <div className={"max-w-[80%] whitespace-pre-line rounded-2xl px-4 py-2.5 text-sm leading-relaxed " + ("bg-primary text-primary-foreground" if m["role"] == "user" else "border border-border bg-card text-foreground")}>
-                                        {m["text"]}
-                                    </div>
+                                    {m["role"] == "user" and
+                                        <div className="max-w-[80%] whitespace-pre-line rounded-2xl bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground">
+                                            {m["text"]}
+                                        </div>}
+                                    {m["role"] == "assistant" and
+                                        <div className="chat-md max-w-[85%] rounded-2xl border border-border bg-card px-4 py-3 text-sm leading-relaxed text-foreground"
+                                             dangerouslySetInnerHTML={{"__html": marked.parse(m["text"])}} />}
                                 </div> for (i, m) in enumerate(chat_msgs)
                             ]}
                             {chat_busy and
@@ -744,21 +749,21 @@ def:pub app -> JsxElement {
     # --- Layout ---------------------------------------------------------------
 
     return
-        <div className="flex min-h-screen">
+        <div className="flex h-[100dvh] flex-col md:h-auto md:min-h-screen md:flex-row">
             {render_sidebar()}
-            <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden md:block md:overflow-visible">
                 {not sidebar_open and
                     <button onClick={lambda (e: MouseEvent) { sidebar_open = True; }}
                             title="Open sidebar"
                             className="fixed left-3 top-3 z-30 hidden size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground md:flex">
                         <HugeiconsIcon icon={SidebarLeft01Icon} strokeWidth={2} className="size-[1.15rem]" />
                     </button>}
-                <header className="glass sticky top-0 z-20 flex items-center gap-2.5 border-b border-border px-4 py-3 md:hidden">
+                <header className="glass z-20 flex shrink-0 items-center gap-2.5 border-b border-border px-4 py-3 md:hidden">
                     <span className="orbit-mark size-6 rounded-full" />
                     <span className="font-display text-[1.05rem] text-foreground">Orbit</span>
                 </header>
 
-            <main className="mx-auto w-full max-w-5xl px-6 pb-28 pt-10">
+            <main className="mx-auto w-full max-w-5xl flex-1 overflow-y-auto px-6 pb-10 pt-10 md:overflow-visible md:pb-28">
                 {tab != "chat" and
                 <>
                 <div className="hero-rise mb-6">
@@ -1068,7 +1073,7 @@ def:pub app -> JsxElement {
                     </div>
                 }
             </main>
-            <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-[#efeae0]/95 backdrop-blur md:hidden">
+            <nav className="z-30 flex shrink-0 border-t border-border bg-[#efeae0] md:hidden">
                 {bottom_nav_item("briefing", "Briefing", DashboardSquare01Icon)}
                 {bottom_nav_item("chat", "Chat", BubbleChatIcon)}
                 {bottom_nav_item("agenda", "Agenda", InboxIcon)}
