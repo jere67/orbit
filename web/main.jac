@@ -12,10 +12,14 @@ import from core.orbit.items {
     list_subtasks, add_subtask, toggle_subtask
 }
 import from core.orbit.areas { list_areas, add_area, archive_area }
-import from core.orbit.ai { smart_briefing, capture, breakdown_item }
+import from core.orbit.ai { capture, breakdown_item, fast_briefing }
 import from core.orbit.analytics { get_analytics }
+import from core.orbit.assistant {
+    quick_dayplan, day_at_a_glance, quick_suggestions, suggestions, weekly_overview, ask
+}
+import from core.orbit.connectors { connector_status, sync_connectors }
 import from core.orbit.demo { seed_demo }
-import from core.orbit.model { Item, Area, Priority, Status, ItemKind, Briefing, Analytics }
+import from core.orbit.model { Item, Area, Priority, Status, ItemKind, Briefing, Analytics, DayPlan, WeekOutlook }
 
 
 def prio_label(p: Priority) -> str {
@@ -49,17 +53,62 @@ def:pub app -> JsxElement {
         new_area_label: str = "",
         expanded: str = "",
         expanded_subs: list = [],
-        new_subtask: str = "";
+        new_subtask: str = "",
+        dayplan: DayPlan | None = None,
+        dayplan_busy: bool = False,
+        suggestions_list: list = [],
+        outlook: WeekOutlook | None = None,
+        outlook_busy: bool = False,
+        connectors: list = [],
+        syncing: bool = False,
+        ask_q: str = "",
+        ask_a: str = "",
+        ask_busy: bool = False;
 
     async def reload {
         items = await list_items();
         areas = await list_areas();
-        brief = await smart_briefing();
+        brief = await fast_briefing();
         analytics = await get_analytics();
+        connectors = await connector_status();
+    }
+
+    async def load_ai {
+        dayplan = await quick_dayplan();
+        suggestions_list = await quick_suggestions();
+        dayplan_busy = True;
+        dayplan = await day_at_a_glance();
+        suggestions_list = await suggestions();
+        dayplan_busy = False;
     }
 
     async can with entry {
         await reload();
+        await load_ai();
+    }
+
+    async def do_ask {
+        q = ask_q.strip();
+        if not q {
+            return;
+        }
+        ask_busy = True;
+        ask_a = "";
+        ask_a = await ask(q);
+        ask_busy = False;
+    }
+
+    async def do_sync {
+        syncing = True;
+        await sync_connectors();
+        syncing = False;
+        await reload();
+    }
+
+    async def load_outlook {
+        outlook_busy = True;
+        outlook = await weekly_overview();
+        outlook_busy = False;
     }
 
     async def do_capture {
@@ -161,6 +210,7 @@ def:pub app -> JsxElement {
         await seed_demo();
         busy = False;
         await reload();
+        await load_ai();
     }
 
     def area_for(key: str) -> Area | None {
@@ -270,6 +320,55 @@ def:pub app -> JsxElement {
             </div>;
     }
 
+    def render_dayplan -> JsxElement {
+        return
+            <div class="rounded-2xl border p-4"
+                 style={{"borderColor": "var(--accent)", "background": "linear-gradient(180deg, rgba(99,102,241,0.12), transparent)"}}>
+                <div class="mb-3 flex items-center gap-2">
+                    <span class="text-xs font-semibold uppercase tracking-wide" style={{"color": "var(--accent)"}}>Day at a glance</span>
+                    {dayplan_busy and <span class="text-xs" style={{"color": "var(--muted)"}}>refining with AI…</span>}
+                </div>
+                {dayplan is not None and
+                    <div class="space-y-3">
+                        <p class="text-sm">{dayplan.greeting}</p>
+                        <div class="space-y-2">
+                            {[
+                                <div key={f.title} class="flex gap-3">
+                                    <span class="w-24 shrink-0 text-xs" style={{"color": "var(--muted)"}}>{f.when}</span>
+                                    <div class="min-w-0">
+                                        <div class="text-sm font-medium">{f.title}</div>
+                                        <div class="text-xs" style={{"color": "var(--muted)"}}>{f.why}</div>
+                                    </div>
+                                </div> for f in dayplan.focus
+                            ]}
+                        </div>
+                        {dayplan.watch_out and
+                            <p class="text-xs" style={{"color": "#f59e0b"}}>⚠ {dayplan.watch_out}</p>}
+                    </div>}
+            </div>;
+    }
+
+    def render_ask -> JsxElement {
+        return
+            <div class="rounded-2xl border p-4"
+                 style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
+                <div class="mb-2 text-xs font-semibold uppercase tracking-wide" style={{"color": "var(--muted)"}}>Ask Orbit</div>
+                <div class="flex gap-2">
+                    <input class="flex-1 rounded-lg px-3 py-2 text-sm" value={ask_q}
+                           placeholder="e.g. What should I focus on before Friday?"
+                           style={{"background": "var(--surface-2)"}}
+                           onChange={lambda (e: ChangeEvent) { ask_q = e.target.value; }}
+                           onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { do_ask(); } }} />
+                    <button onClick={lambda (e: MouseEvent) { do_ask(); }}
+                            class="shrink-0 rounded-lg px-4 py-2 text-sm font-medium text-white"
+                            style={{"background": "var(--accent)", "opacity": "0.6" if ask_busy else "1"}}>
+                        {"…" if ask_busy else "Ask"}
+                    </button>
+                </div>
+                {ask_a and <p class="mt-3 whitespace-pre-line text-sm leading-relaxed">{ask_a}</p>}
+            </div>;
+    }
+
     def tab_button(id: str, label: str) -> JsxElement {
         active = tab == id;
         return
@@ -325,6 +424,17 @@ def:pub app -> JsxElement {
 
             {tab == "briefing" and brief is not None and
                 <div class="space-y-6">
+                    {render_dayplan()}
+                    {render_ask()}
+                    {len(suggestions_list) > 0 and
+                        <div class="space-y-1">
+                            {[
+                                <div key={s} class="rounded-lg border px-3 py-2 text-sm"
+                                     style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
+                                    💡 {s}
+                                </div> for s in suggestions_list
+                            ]}
+                        </div>}
                     {len(brief.flags) > 0 and
                         <div class="space-y-1">
                             {[
@@ -405,6 +515,28 @@ def:pub app -> JsxElement {
 
             {tab == "insight" and analytics is not None and
                 <div class="space-y-6">
+                    <section class="rounded-2xl border p-4"
+                             style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
+                        <div class="mb-2 flex items-center justify-between">
+                            <span class="text-xs font-semibold uppercase tracking-wide" style={{"color": "var(--muted)"}}>Weekly overview</span>
+                            <button onClick={lambda (e: MouseEvent) { load_outlook(); }}
+                                    class="rounded-lg px-3 py-1 text-xs font-medium text-white"
+                                    style={{"background": "var(--accent)", "opacity": "0.6" if outlook_busy else "1"}}>
+                                {"Thinking…" if outlook_busy else ("Refresh" if outlook is not None else "Generate")}
+                            </button>
+                        </div>
+                        {outlook is not None and
+                            <div class="space-y-2">
+                                <p class="text-sm">{outlook.summary}</p>
+                                {outlook.busiest_day and
+                                    <p class="text-xs" style={{"color": "var(--muted)"}}>Busiest day: {outlook.busiest_day}</p>}
+                                {[<p key={r} class="text-xs" style={{"color": "#f59e0b"}}>⚠ {r}</p> for r in outlook.risks]}
+                                {outlook.suggestion and
+                                    <p class="text-sm" style={{"color": "var(--accent)"}}>→ {outlook.suggestion}</p>}
+                            </div>}
+                        {outlook is None and not outlook_busy and
+                            <p class="text-xs" style={{"color": "var(--muted)"}}>Generate an AI outlook of your week ahead.</p>}
+                    </section>
                     <section class="grid grid-cols-3 gap-3">
                         <div class="rounded-xl border p-3" style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
                             <div class="text-2xl font-semibold">{analytics.streaks.current}</div>
@@ -453,6 +585,29 @@ def:pub app -> JsxElement {
 
             {tab == "settings" and
                 <div class="space-y-4">
+                    <div class="rounded-xl border p-3"
+                         style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
+                        <div class="mb-2 flex items-center justify-between">
+                            <span class="text-xs font-semibold uppercase tracking-wide" style={{"color": "var(--muted)"}}>Connectors</span>
+                            <button onClick={lambda (e: MouseEvent) { do_sync(); }}
+                                    class="rounded-lg px-3 py-1 text-xs font-medium text-white"
+                                    style={{"background": "var(--accent)", "opacity": "0.6" if syncing else "1"}}>
+                                {"Syncing…" if syncing else "Sync now"}
+                            </button>
+                        </div>
+                        <div class="space-y-1">
+                            {[
+                                <div key={c.name} class="flex items-center gap-2 text-sm">
+                                    <span class="h-2 w-2 shrink-0 rounded-full"
+                                          style={{"background": "#10b981" if c.configured else "var(--border)"}} />
+                                    <span>{c.label}</span>
+                                    <span class="text-xs" style={{"color": "var(--muted)"}}>
+                                        {"connected" if c.configured else "not configured - see .env.example"}
+                                    </span>
+                                </div> for c in connectors
+                            ]}
+                        </div>
+                    </div>
                     <div class="flex gap-2 rounded-xl border p-3"
                          style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
                         <input class="flex-1 rounded-lg px-2 py-1.5 text-sm" value={new_area_label}
