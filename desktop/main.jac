@@ -1,16 +1,12 @@
-import from core.jacyac.github.auth {
-    github_enabled,
-    begin_github,
-    github_callback_mode,
-    finish_github,
-    complete_native_github,
-    poll_github
-}
-import from core.jacyac.github.repos { github_repositories }
-import "../core/site/styles/global.css";
-import "../core/site/styles/site.css";
-import "../core/site/styles/brand.css";
+"""Orbit desktop surface: the web app wrapped in a native OS window.
 
-def:pub app(children: any) -> JsxElement {
-    return <>{children}</>;
+The desktop app embeds a webview over the same served client, so it reuses the
+exact web UI and backend - a genuine fifth surface for near-zero extra code.
+"""
+
+import from web.main { app as OrbitApp }
+
+
+def:pub app -> JsxElement {
+    return <OrbitApp />;
 }
