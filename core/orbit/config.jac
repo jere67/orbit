@@ -69,3 +69,23 @@ def model_name -> str {
     }
     return "local:gemma-4-e4b";
 }
+
+
+"""Whether to actually call the LLM at runtime.
+
+A hosted key (or an explicit non-local ORBIT_MODEL) enables AI. The local model
+is powerful but its CPU backend can be unstable, so it is opt-in via
+ORBIT_LOCAL_AI - by default, with no key, Orbit uses only its deterministic
+logic, which always works and never crashes the server.
+"""
+def ai_enabled -> bool {
+    ensure_env();
+    if os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY") {
+        return True;
+    }
+    forced = os.getenv("ORBIT_MODEL");
+    if forced and not forced.startswith("local:") {
+        return True;
+    }
+    return bool(os.getenv("ORBIT_LOCAL_AI"));
+}

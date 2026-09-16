@@ -11,6 +11,7 @@ work with no model:
 
 import from .model { Item, Priority, Status, FocusBlock, DayPlan, WeekOutlook }
 import from .llm { orbit_llm }
+import from .config { ai_enabled }
 import from .items { list_items }
 import from .areas { list_areas }
 import from .scoring { is_open, rank, urgency }
@@ -27,17 +28,21 @@ def plan_day(summary: str, weekday: str) -> DayPlan by orbit_llm();
 sem plan_day = "You are a sharp personal chief-of-staff. Given a student's agenda for today, produce a 'day at a glance': a one-line greeting, 2 to 4 ordered focus blocks (a rough time hint, the item to work on, and why it is the priority), and one thing to watch out for. Be decisive and specific; do not just restate the list.";
 
 
+glob PROMPT_CAP: int = 1600;
+
+
 """A compact text view of today used to prompt the day/week models."""
 def _today_summary -> str {
     brief = get_briefing();
     lines = [];
-    for it in brief.today {
+    for it in brief.today[:8] {
         lines.append("- " + it.title + " (" + it.area_key + ", " + str(it.priority.name) + ")");
     }
-    slip = [it.title for it in brief.slipping];
+    slip = [it.title for it in brief.slipping[:6]];
     body = "\n".join(lines) if lines else "(nothing due today)";
-    return "Today's items:\n" + body + "\nSlipping: " + (", ".join(slip) if slip else "none")
+    summary = "Today's items:\n" + body + "\nSlipping: " + (", ".join(slip) if slip else "none")
         + "\nFlags: " + ("; ".join(brief.flags) if brief.flags else "none");
+    return summary[:PROMPT_CAP];
 }
 
 
@@ -63,6 +68,9 @@ def:pub quick_dayplan -> DayPlan {
 
 """A reasoned, AI-written plan for today, falling back to the quick plan."""
 def:pub day_at_a_glance -> DayPlan {
+    if not ai_enabled() {
+        return quick_dayplan();
+    }
     weekday = pretty_date(today_str());
     try {
         plan = plan_day(_today_summary(), weekday);
@@ -88,23 +96,26 @@ def _week_summary -> str {
     lines = [];
     for b in brief.week {
         if b.items {
-            titles = ", ".join([it.title for it in b.items]);
+            titles = ", ".join([it.title for it in b.items[:6]]);
             lines.append(b.label + " (" + str(b.effort_min) + "m): " + titles);
         }
     }
-    return "\n".join(lines) if lines else "(a quiet week - nothing scheduled)";
+    summary = "\n".join(lines) if lines else "(a quiet week - nothing scheduled)";
+    return summary[:PROMPT_CAP];
 }
 
 
 """An AI outlook on the week, falling back to a computed one."""
 def:pub weekly_overview -> WeekOutlook {
-    try {
-        outlook = outlook_week(_week_summary());
-        if outlook.summary.strip() {
-            return outlook;
+    if ai_enabled() {
+        try {
+            outlook = outlook_week(_week_summary());
+            if outlook.summary.strip() {
+                return outlook;
+            }
+        } except Exception as e {
+            _ = e;
         }
-    } except Exception as e {
-        _ = e;
     }
     brief = get_briefing();
     total = 0;
@@ -154,14 +165,16 @@ def:pub quick_suggestions -> list[str] {
 
 """AI-generated proactive nudges, falling back to the deterministic ones."""
 def:pub suggestions -> list[str] {
-    try {
-        moves = suggest_moves(_week_summary());
-        cleaned = [m.strip() for m in moves if m.strip()];
-        if cleaned {
-            return cleaned[:3];
+    if ai_enabled() {
+        try {
+            moves = suggest_moves(_week_summary());
+            cleaned = [m.strip() for m in moves if m.strip()];
+            if cleaned {
+                return cleaned[:3];
+            }
+        } except Exception as e {
+            _ = e;
         }
-    } except Exception as e {
-        _ = e;
     }
     return quick_suggestions();
 }
@@ -177,7 +190,7 @@ def tool_today -> str {
     if not brief.today {
         return "Nothing is due today.";
     }
-    return "\n".join(["- " + it.title + " [" + it.area_key + ", " + str(it.priority.name) + "]" for it in brief.today]);
+    return "\n".join(["- " + it.title + " [" + it.area_key + ", " + str(it.priority.name) + "]" for it in brief.today])[:PROMPT_CAP];
 }
 
 
@@ -189,7 +202,7 @@ def tool_area(area_key: str) -> str {
     if not rows {
         return "No open items in '" + area_key + "'.";
     }
-    return "\n".join(["- " + it.title + (" (due " + it.due[:10] + ")" if it.due else "") for it in rank(rows)]);
+    return "\n".join(["- " + it.title + (" (due " + it.due[:10] + ")" if it.due else "") for it in rank(rows)])[:PROMPT_CAP];
 }
 
 
@@ -206,7 +219,7 @@ def tool_upcoming(days: int) -> str {
     if not rows {
         return "Nothing due in the next " + str(days) + " days.";
     }
-    return "\n".join(["- " + it.title + " (due " + it.due[:10] + ", " + it.area_key + ")" for it in rank(rows)]);
+    return "\n".join(["- " + it.title + " (due " + it.due[:10] + ", " + it.area_key + ")" for it in rank(rows)])[:PROMPT_CAP];
 }
 
 
@@ -220,6 +233,9 @@ def:pub ask(question: str) -> str {
     if not q {
         return "";
     }
+    if not ai_enabled() {
+        return "Ask Orbit needs an AI model. Set ANTHROPIC_API_KEY in .env (or ORBIT_LOCAL_AI=1 to use the local model).";
+    }
     try {
         answer = ask_agent(q, today_str());
         if answer.strip() {
@@ -228,5 +244,5 @@ def:pub ask(question: str) -> str {
     } except Exception as e {
         _ = e;
     }
-    return "I couldn't reach the AI model just now. Set ANTHROPIC_API_KEY (or install the local model) to enable Ask Orbit.";
+    return "I couldn't reach the AI model just now. Check your ANTHROPIC_API_KEY, or try again.";
 }

@@ -14,7 +14,7 @@ import json;
 import hashlib;
 import urllib.request;
 
-import from .config { env, has_env }
+import from .config { env, has_env, ai_enabled }
 import from .llm { orbit_llm }
 import from .items { add_item, item_by_external, list_items }
 import from .timeutil { today_str, date_of, add_days }
@@ -197,14 +197,16 @@ def _actions_from(messages: list[str]) -> list[str] {
     if not msgs {
         return [];
     }
-    try {
-        acts = extract_actions(msgs[:30]);
-        cleaned = [a.strip() for a in acts if a.strip()];
-        if cleaned {
-            return cleaned[:10];
+    if ai_enabled() {
+        try {
+            acts = extract_actions([m[:200] for m in msgs[:25]]);
+            cleaned = [a.strip() for a in acts if a.strip()];
+            if cleaned {
+                return cleaned[:10];
+            }
+        } except Exception as e {
+            _ = e;
         }
-    } except Exception as e {
-        _ = e;
     }
     keywords = ["todo", "deadline", "due", "please", "can you", "need to", "action item", "by tomorrow", "by friday"];
     out = [];

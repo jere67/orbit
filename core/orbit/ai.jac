@@ -7,6 +7,7 @@ model installed and no API key. The default model is set in jac.toml.
 
 import from .model { Item, Subtask }
 import from .llm { orbit_llm }
+import from .config { ai_enabled }
 import from .briefing { Briefing, get_briefing, plain_headline }
 import from .items { add_item, add_subtask, item_by_id }
 import from .areas { list_areas, area_exists, add_area }
@@ -69,6 +70,9 @@ def:pub fast_briefing -> Briefing {
 """The Briefing with an AI-narrated headline, falling back to plain text."""
 def:pub smart_briefing -> Briefing {
     brief = get_briefing();
+    if not ai_enabled() {
+        return brief;
+    }
     summary = _summarize(brief);
     try {
         text = narrate(summary);
@@ -132,10 +136,12 @@ def:pub capture(text: str) -> list[Item] {
     keys = [a.key for a in list_areas()];
     today = today_str();
     parsed = [];
-    try {
-        parsed = parse_items(text, keys, today);
-    } except Exception {
-        parsed = [];
+    if ai_enabled() {
+        try {
+            parsed = parse_items(text, keys, today);
+        } except Exception {
+            parsed = [];
+        }
     }
     if not parsed {
         parsed = _fallback_parse(text, today);
@@ -175,10 +181,12 @@ def:pub breakdown_item(id: str) -> list[Subtask] {
         return [];
     }
     titles = [];
-    try {
-        titles = breakdown(it.title);
-    } except Exception {
-        titles = [];
+    if ai_enabled() {
+        try {
+            titles = breakdown(it.title);
+        } except Exception {
+            titles = [];
+        }
     }
     subs = [];
     for t in titles {

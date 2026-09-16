@@ -57,21 +57,23 @@ The same backend powers four surfaces (plus a bonus fifth): a **web app**, a
   server, client toolchain, and byLLM.
 - **Mobile** additionally needs the React Native / Expo toolchain, which
   `jac setup mobile` installs for you (Node is bundled by Jac).
-- **AI is optional and self-configuring.** Copy `.env.example` to `.env` and
-  fill in what you have; Orbit chooses the model automatically:
-  - Set `ANTHROPIC_API_KEY` in `.env` to use **Anthropic Claude** (recommended -
-    fast, best quality).
-  - Otherwise it uses the **built-in local model** (no key, no cost), which you
-    install once:
+- **AI is optional and self-configuring.** Copy `.env.example` to `.env`:
+  - **Recommended:** set `ANTHROPIC_API_KEY` to use **Anthropic Claude** - fast,
+    reliable, and it powers every AI feature.
+  - **With no key (default):** Orbit uses only its **deterministic logic**. The
+    day plan, suggestions, briefing, and connectors all still work - the app is
+    fully functional and rock-solid, just without the LLM's prose and reasoning.
+  - **Local model (opt-in):** the bundled local model is powerful but its CPU
+    backend is slow and can be unstable on some hardware, so it is off by
+    default. To use it, install it once and set `ORBIT_LOCAL_AI=1` in `.env`:
 
     ```bash
     jac install 'byllm[local]'
     jac model pull gemma-4-e4b
     ```
 
-  With neither, every AI feature falls back to deterministic logic and the app
-  still works. (The local model runs on CPU and is slow - the day plan renders
-  instantly and the LLM refines it when ready; a cloud key makes it snappy.)
+  So out of the box Orbit never crashes on AI; add a cloud key for the full
+  JARVIS experience. (Orbit also caps every prompt it sends the model.)
 
 ---
 
