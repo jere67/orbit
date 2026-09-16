@@ -45,10 +45,10 @@ import from core.orbit.analytics { get_analytics }
 import from core.orbit.assistant {
     quick_dayplan, day_at_a_glance, quick_suggestions, suggestions, weekly_overview, ask
 }
-import from core.orbit.connectors { connector_status, sync_connectors }
+import from core.orbit.connectors { connector_status, sync_connectors, preview_connectors }
 import from core.orbit.config { ai_status }
 import from core.orbit.demo { seed_demo }
-import from core.orbit.model { Item, Area, Priority, Status, ItemKind, Briefing, Analytics, DayPlan, WeekOutlook, DayBucket, DensityDay }
+import from core.orbit.model { Item, Area, Priority, Status, ItemKind, Briefing, Analytics, DayPlan, WeekOutlook, DayBucket, DensityDay, ConnectorPreview }
 
 
 glob MONTHS: list = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -111,6 +111,8 @@ def:pub app -> JsxElement {
         connectors: list = [],
         syncing: bool = False,
         sync_summary: str = "",
+        preview: ConnectorPreview | None = None,
+        preview_busy: bool = False,
         chat_input: str = "",
         chat_msgs: list = [],
         chat_busy: bool = False,
@@ -168,6 +170,12 @@ def:pub app -> JsxElement {
         }
         areas = [x for x in areas];
         await update_area(key=key, color=color);
+    }
+
+    async def do_preview {
+        preview_busy = True;
+        preview = await preview_connectors();
+        preview_busy = False;
     }
 
     async def do_sync {
@@ -1028,10 +1036,15 @@ def:pub app -> JsxElement {
                                         <HugeiconsIcon icon={Link01Icon} strokeWidth={2} className="size-4 text-primary" />
                                         Connectors
                                     </CardTitle>
-                                    <Button size="sm" onClick={lambda (e: MouseEvent) { do_sync(); }} disabled={syncing}>
-                                        <HugeiconsIcon icon={RefreshIcon} strokeWidth={2} className={"size-4 " + ("animate-spin" if syncing else "")} />
-                                        {"Syncing..." if syncing else "Sync now"}
-                                    </Button>
+                                    <div className="flex items-center gap-2">
+                                        <Button size="sm" variant="outline" onClick={lambda (e: MouseEvent) { do_preview(); }} disabled={preview_busy}>
+                                            {"Checking..." if preview_busy else "Preview"}
+                                        </Button>
+                                        <Button size="sm" onClick={lambda (e: MouseEvent) { do_sync(); }} disabled={syncing}>
+                                            <HugeiconsIcon icon={RefreshIcon} strokeWidth={2} className={"size-4 " + ("animate-spin" if syncing else "")} />
+                                            {"Syncing..." if syncing else "Sync now"}
+                                        </Button>
+                                    </div>
                                 </div>
                             </CardHeader>
                             <CardContent className="space-y-2">
@@ -1050,6 +1063,26 @@ def:pub app -> JsxElement {
                                         <HugeiconsIcon icon={Tick02Icon} strokeWidth={2} className="size-3.5" />
                                         {sync_summary}
                                     </p>}
+                                {preview is not None and
+                                    <div className="mt-1 space-y-2 rounded-lg border border-dashed border-border bg-background/40 p-3">
+                                        <p className="text-xs font-medium text-muted-foreground">Preview — what a sync would pull right now (not imported yet):</p>
+                                        {(len(preview.calendar) + len(preview.notion)) == 0 and
+                                            <p className="text-xs text-muted-foreground">Nothing came back. Check that the feed URL / page is shared and has upcoming items.</p>}
+                                        {[
+                                            <div key={"c" + p.external_id} className="flex flex-wrap items-center gap-2 text-xs">
+                                                <span className="rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] uppercase tracking-wide text-muted-foreground">calendar</span>
+                                                <span className="text-foreground">{p.title}</span>
+                                                <span className="text-muted-foreground">{p.area}{p.due and "  ·  " + p.due}</span>
+                                            </div> for p in preview.calendar
+                                        ]}
+                                        {[
+                                            <div key={"n" + p.external_id} className="flex flex-wrap items-center gap-2 text-xs">
+                                                <span className="rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] uppercase tracking-wide text-muted-foreground">notion</span>
+                                                <span className="text-foreground">{p.title}</span>
+                                                <span className="text-muted-foreground">{p.area}{p.due and "  ·  " + p.due}</span>
+                                            </div> for p in preview.notion
+                                        ]}
+                                    </div>}
                             </CardContent>
                         </Card>
 

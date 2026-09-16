@@ -19,7 +19,7 @@ import from .config { env, has_env, ai_enabled }
 import from .llm { orbit_llm }
 import from .items { add_item, item_by_external, list_items }
 import from .timeutil { today_str, date_of, add_days, now_iso, iso_in }
-import from .model { ConnectorStatus, SyncResult }
+import from .model { ConnectorStatus, SyncResult, PreviewItem, ConnectorPreview }
 
 
 # Persisted Slack auth, so a rotating refresh token (which is single-use and
@@ -151,7 +151,7 @@ def _parse_ics(text: str, area: str) -> list[ExternalItem] {
                     out.append(
                         ExternalItem(
                             title=cur["SUMMARY"], source="calendar", area_key=area,
-                            kind="EVENT", due=due, external_id=area + ":" + uid
+                            kind="EVENT", due=due, external_id=uid
                         )
                     );
                 }
@@ -170,19 +170,31 @@ def _parse_ics(text: str, area: str) -> list[ExternalItem] {
 
 
 """Read upcoming events from every configured Google Calendar feed, tagging each
-feed's events with its mapped area. A broken feed is skipped, not fatal."""
+feed's events with its mapped area. A broken feed is skipped, not fatal. An
+event that appears in more than one calendar is kept once - the first feed
+(earliest in the config) wins its area - so overlapping calendars don't double
+up."""
 def fetch_calendar -> list[ExternalItem] {
-    out = [];
+    gathered = [];
     for src in _ics_sources() {
         try {
             req = urllib.request.Request(src["url"], headers={"User-Agent": "Orbit"});
             with urllib.request.urlopen(req, timeout=20) as resp {
                 text = resp.read().decode("utf-8", "ignore");
             }
-            out = out + _parse_ics(text, src["area"]);
+            gathered = gathered + _parse_ics(text, src["area"]);
         } except Exception as e {
             _ = e;
         }
+    }
+    out = [];
+    seen = set();
+    for it in gathered {
+        if it.external_id in seen {
+            continue;
+        }
+        seen.add(it.external_id);
+        out.append(it);
     }
     return out;
 }
@@ -443,6 +455,24 @@ def fetch_slack -> list[ExternalItem] {
 
 
 # --- Status and sync ---------------------------------------------------------
+
+"""Dry-run the connectors: return exactly what Google Calendar and Notion pull
+right now, WITHOUT writing anything to the graph. For verifying a real setup."""
+def:pub preview_connectors -> ConnectorPreview {
+    cal = fetch_calendar();
+    notion = fetch_notion();
+    return ConnectorPreview(
+        calendar=[
+            PreviewItem(title=it.title, area=it.area_key, kind=it.kind, due=it.due, external_id=it.external_id)
+            for it in cal
+        ],
+        notion=[
+            PreviewItem(title=it.title, area=it.area_key, kind=it.kind, due=it.due, external_id=it.external_id)
+            for it in notion
+        ]
+    );
+}
+
 
 """Which connectors are configured (for the Settings UI)."""
 def:pub connector_status -> list[ConnectorStatus] {

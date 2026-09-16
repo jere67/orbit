@@ -161,6 +161,19 @@ obj ConnectorStatus {
         configured: bool = False;
 }
 
+obj PreviewItem {
+    has title: str = "",
+        area: str = "",
+        kind: str = "",
+        due: str = "",
+        external_id: str = "";
+}
+
+obj ConnectorPreview {
+    has calendar: list[PreviewItem] = [],
+        notion: list[PreviewItem] = [];
+}
+
 obj SyncResult {
     has source: str,
         configured: bool = False,
