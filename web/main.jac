@@ -110,6 +110,7 @@ def:pub app -> JsxElement {
         outlook_busy: bool = False,
         connectors: list = [],
         syncing: bool = False,
+        sync_summary: str = "",
         chat_input: str = "",
         chat_msgs: list = [],
         chat_busy: bool = False,
@@ -171,8 +172,21 @@ def:pub app -> JsxElement {
 
     async def do_sync {
         syncing = True;
-        await sync_connectors();
+        sync_summary = "";
+        results = await sync_connectors();
         syncing = False;
+        parts = [];
+        for r in results {
+            if not r.configured {
+                continue;
+            }
+            if r.error {
+                parts.append(r.source + ": error");
+            } else {
+                parts.append(r.source + " " + str(r.imported) + " new, " + str(r.updated) + " updated");
+            }
+        }
+        sync_summary = ("Synced — " + "  ·  ".join(parts)) if parts else "No connectors configured yet.";
         await reload();
     }
 
@@ -1031,6 +1045,11 @@ def:pub app -> JsxElement {
                                         </span>
                                     </div> for c in connectors
                                 ]}
+                                {sync_summary and
+                                    <p className="flex items-center gap-1.5 pt-1 text-xs text-primary">
+                                        <HugeiconsIcon icon={Tick02Icon} strokeWidth={2} className="size-3.5" />
+                                        {sync_summary}
+                                    </p>}
                             </CardContent>
                         </Card>
 

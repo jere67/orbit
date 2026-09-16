@@ -178,7 +178,13 @@ def fetch_calendar -> list[ExternalItem] {
 }
 
 
-# --- Notion (a to-do database) -----------------------------------------------
+# --- Notion (a to-do database OR a checklist page) ---------------------------
+
+"""The Notion auth headers."""
+def _notion_headers(token: str) -> dict {
+    return {"Authorization": "Bearer " + token, "Notion-Version": "2022-06-28"};
+}
+
 
 """Extract the plain text of a Notion title property."""
 def _notion_title(props: dict, name: str) -> str {
@@ -196,19 +202,12 @@ def _notion_date(props: dict, name: str) -> str {
 }
 
 
-"""Read open tasks from the configured Notion database."""
-def fetch_notion -> list[ExternalItem] {
-    token = env("NOTION_TOKEN");
-    db = env("NOTION_DB_ID");
-    if not token or not db {
-        return [];
-    }
-    area = env("ORBIT_NOTION_AREA", "coursework");
+"""Open rows of a Notion database, as task ExternalItems."""
+def _notion_db_tasks(token: str, db: str, area: str) -> list[ExternalItem] {
     title_prop = env("ORBIT_NOTION_TITLE_PROP", "Name");
     date_prop = env("ORBIT_NOTION_DATE_PROP", "Due");
-    headers = {"Authorization": "Bearer " + token, "Notion-Version": "2022-06-28"};
     data = _http_post(
-        "https://api.notion.com/v1/databases/" + db + "/query", headers, {"page_size": 50}
+        "https://api.notion.com/v1/databases/" + db + "/query", _notion_headers(token), {"page_size": 50}
     );
     out = [];
     for page in (data.get("results") or []) {
@@ -225,6 +224,66 @@ def fetch_notion -> list[ExternalItem] {
         );
     }
     return out;
+}
+
+
+"""Walk a page/block's children and collect every UNCHECKED to-do checklist
+item, recursing into nested blocks (bounded). This handles a plain Notion page
+that is just a checklist, rather than a database."""
+def _notion_page_todos(token: str, block_id: str, area: str, depth: int) -> list[ExternalItem] {
+    out = [];
+    if depth > 3 {
+        return out;
+    }
+    url = "https://api.notion.com/v1/blocks/" + block_id + "/children?page_size=100";
+    try {
+        data = _http_get(url, _notion_headers(token));
+    } except Exception as e {
+        _ = e;
+        return out;
+    }
+    for block in (data.get("results") or []) {
+        if block.get("type") == "to_do" {
+            todo = block.get("to_do") or {};
+            if not todo.get("checked") {
+                rich = todo.get("rich_text") or [];
+                title = " ".join([(t.get("plain_text") or "") for t in rich]).strip();
+                if title {
+                    bid = block.get("id") or _hash_id(title);
+                    out.append(
+                        ExternalItem(
+                            title=title, source="notion", area_key=area, kind="TASK",
+                            due="", external_id=bid
+                        )
+                    );
+                }
+            }
+        }
+        if block.get("has_children") {
+            out = out + _notion_page_todos(token, block.get("id"), area, depth + 1);
+        }
+    }
+    return out;
+}
+
+
+"""Read open tasks from Notion: a database (NOTION_DB_ID) or a checklist page
+(NOTION_PAGE_ID). Share the DB/page with your integration first."""
+def fetch_notion -> list[ExternalItem] {
+    token = env("NOTION_TOKEN");
+    if not token {
+        return [];
+    }
+    area = env("ORBIT_NOTION_AREA", "coursework");
+    page = env("NOTION_PAGE_ID");
+    if page {
+        return _notion_page_todos(token, page, area, 0);
+    }
+    db = env("NOTION_DB_ID");
+    if db {
+        return _notion_db_tasks(token, db, area);
+    }
+    return [];
 }
 
 
@@ -299,7 +358,7 @@ def fetch_slack -> list[ExternalItem] {
 def:pub connector_status -> list[ConnectorStatus] {
     return [
         ConnectorStatus(name="calendar", label="Google Calendar", configured=(has_env("ORBIT_CAL_ICS_URL") or has_env("ORBIT_CAL_ICS_URLS"))),
-        ConnectorStatus(name="notion", label="Notion", configured=(has_env("NOTION_TOKEN") and has_env("NOTION_DB_ID"))),
+        ConnectorStatus(name="notion", label="Notion", configured=(has_env("NOTION_TOKEN") and (has_env("NOTION_DB_ID") or has_env("NOTION_PAGE_ID")))),
         ConnectorStatus(name="slack", label="Slack", configured=(has_env("SLACK_TOKEN") and has_env("SLACK_CHANNELS")))
     ];
 }
