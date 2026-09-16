@@ -155,6 +155,42 @@ def run_done(prefix: str) -> int {
 }
 
 
+def run_ask(question: str) -> int {
+    q = question.strip();
+    if not q {
+        warn("orbit ask: ask a question");
+        return EXIT_USAGE;
+    }
+    try {
+        print(call("ask", {"question": q}));
+        return EXIT_OK;
+    } except Exception as e {
+        return report_error(e);
+    }
+}
+
+
+def run_sync -> int {
+    try {
+        results = call("sync_connectors", {});
+        any_configured = False;
+        for r in results {
+            if r["configured"] {
+                any_configured = True;
+                extra = ("  error: " + r["error"]) if r["error"] else "";
+                print(f"{r['source']}: +{r['imported']} new, {r['updated']} updated{extra}");
+            }
+        }
+        if not any_configured {
+            print("no connectors configured; see .env.example");
+        }
+        return EXIT_OK;
+    } except Exception as e {
+        return report_error(e);
+    }
+}
+
+
 def run_area(action: str, label: str) -> int {
     try {
         if action == "list" {

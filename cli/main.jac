@@ -5,7 +5,7 @@ import argparse;
 import sys;
 import from cli.commands.common { EXIT_USAGE, warn }
 import from cli.commands.actions {
-    run_add, run_capture, run_list, run_today, run_week, run_done, run_area
+    run_add, run_capture, run_list, run_today, run_week, run_done, run_area, run_ask, run_sync
 }
 
 glob PROG: str = "orbit";
@@ -43,6 +43,11 @@ def build_parser -> argparse.ArgumentParser {
 
     cap = commands.add_parser("capture", help="add items from natural language");
     cap.add_argument("text", help="e.g. 'read the paper by friday'");
+
+    asker = commands.add_parser("ask", help="ask Orbit's assistant a question");
+    asker.add_argument("text", help="e.g. 'what should I do first today?'");
+
+    commands.add_parser("sync", help="pull items from configured connectors");
 
     ls = commands.add_parser("list", help="list items");
     ls.add_argument("--area", `default="", help="only this area key");
@@ -85,6 +90,12 @@ def dispatch(inv: Invocation) -> int {
     }
     if inv.command == "capture" {
         return run_capture(inv.text);
+    }
+    if inv.command == "ask" {
+        return run_ask(inv.text);
+    }
+    if inv.command == "sync" {
+        return run_sync();
     }
     if inv.command == "list" {
         return run_list(inv.area);
