@@ -396,21 +396,19 @@ def:pub app -> JsxElement {
     # --- The week board (horizontal Sunday -> Saturday day progression) ------
 
     def render_chip(it: Item) -> JsxElement {
-        area = area_for(it.area_key);
-        color = area.color if area is not None else "#ff5c45";
+        color = area_color(it.area_key);
         done = it.status == Status.DONE or it.status == Status.SKIPPED;
         id = jid(it);
         return
             <button key={id}
                     onClick={lambda (e: MouseEvent) { do_toggle_complete(id, done); }}
                     title={it.title + (" (done - click to reopen)" if done else " (click to complete)")}
-                    className="flex w-full items-start gap-1.5 rounded-lg border border-border bg-card px-2 py-1.5 text-left transition-colors hover:border-[color-mix(in_oklab,var(--foreground)_20%,transparent)]">
-                <span className="mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full"
-                      style={{"background": color + "22"}}>
-                    {done and <HugeiconsIcon icon={Tick02Icon} strokeWidth={3} className="size-2.5" style={{"color": color}} />}
-                    {not done and <span className="size-1.5 rounded-full" style={{"background": color}} />}
+                    className="group flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-[color-mix(in_oklab,var(--foreground)_6%,transparent)]">
+                <span className="mt-px flex size-4 shrink-0 items-center justify-center rounded-[5px] border-2 transition-colors"
+                      style={{"borderColor": color, "background": color if done else "transparent"}}>
+                    {done and <HugeiconsIcon icon={Tick02Icon} strokeWidth={3} className="size-2.5 text-white" />}
                 </span>
-                <span className={"text-xs leading-snug " + ("text-muted-foreground line-through" if done else "text-foreground")}>
+                <span className={"min-w-0 flex-1 break-words text-[0.82rem] leading-snug " + ("text-muted-foreground line-through" if done else "text-foreground")}>
                     {it.title}
                 </span>
             </button>;
@@ -424,18 +422,18 @@ def:pub app -> JsxElement {
         open_count = len([it for it in b.items if not (it.status == Status.DONE or it.status == Status.SKIPPED)]);
         return
             <div key={b.date}
-                 className={"flex min-w-[6rem] flex-1 flex-col rounded-xl border p-2 " + ("border-primary/40 bg-primary/5" if is_today else "border-border bg-secondary/30")}>
-                <div className="mb-2 flex items-baseline justify-between px-1">
-                    <span className={"font-display text-sm " + ("text-primary" if is_today else "text-foreground")}>{dow}</span>
-                    <span className="text-xs text-muted-foreground">{daynum}</span>
+                 className={"flex min-w-[8.5rem] flex-1 flex-col rounded-xl px-1 pt-1 pb-2 " + ("bg-primary/[0.06]" if is_today else "")}>
+                <div className={"mb-2 flex items-baseline gap-2 border-b px-1.5 pb-2 " + ("border-primary/40" if is_today else "border-border")}>
+                    <span className={"font-display text-[0.95rem] " + ("text-primary" if is_today else "text-foreground")}>{dow}</span>
+                    <span className={"text-xs " + ("text-primary/70" if is_today else "text-muted-foreground")}>{daynum}</span>
                 </div>
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-0.5">
                     {len(b.items) == 0 and
-                        <div className="rounded-lg py-3 text-center text-xs text-muted-foreground/50">–</div>}
+                        <div className="px-1.5 py-1 text-xs text-muted-foreground/40">No tasks</div>}
                     {[render_chip(it) for it in b.items]}
                 </div>
                 {open_count > 0 and
-                    <div className="mt-2 px-1 text-[0.65rem] text-muted-foreground">{open_count} open · {b.effort_min} min</div>}
+                    <div className="mt-2 px-1.5 text-[0.65rem] text-muted-foreground">{open_count} open · {b.effort_min} min</div>}
             </div>;
     }
 
@@ -444,7 +442,7 @@ def:pub app -> JsxElement {
             return <div />;
         }
         return
-            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+            <div className="flex gap-2 overflow-x-auto pb-1">
                 {[render_day_col(b) for b in brief.week_grid]}
             </div>;
     }
@@ -620,15 +618,15 @@ def:pub app -> JsxElement {
     return
         <div className="relative min-h-screen">
             <header className="glass sticky top-0 z-20 border-b border-border">
-                <div className="mx-auto flex max-w-3xl items-center gap-2.5 px-4 py-3.5">
+                <div className="mx-auto flex max-w-6xl items-center gap-2.5 px-4 py-3.5">
                     <span className="orbit-mark size-6 rounded-full" />
                     <span className="font-display text-[1.05rem] text-foreground">Orbit</span>
                     <span className="hidden text-sm text-muted-foreground sm:inline">· the agenda that thinks</span>
                 </div>
             </header>
 
-            <main className="mx-auto max-w-3xl px-4 pb-28 pt-10">
-                <div className="hero-rise mb-6">
+            <main className="mx-auto max-w-6xl px-4 pb-28 pt-10">
+                <div className="hero-rise mb-6 max-w-3xl">
                     <h1 className="font-display text-[2rem] leading-[1.1] text-foreground sm:text-[2.6rem]">
                         {brief.headline if brief is not None else "Bringing your day into focus."}
                     </h1>
@@ -637,7 +635,7 @@ def:pub app -> JsxElement {
                     </p>
                 </div>
 
-                <div className="hero-rise hero-rise-2 mb-8 flex items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-[0_2px_10px_rgba(36,32,27,0.05)]">
+                <div className="hero-rise hero-rise-2 mb-8 flex max-w-3xl items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-[0_2px_10px_rgba(36,32,27,0.05)]">
                     <span className="pl-1.5 text-primary">
                         <HugeiconsIcon icon={AiMagicIcon} strokeWidth={2} className="size-5" />
                     </span>
@@ -658,7 +656,7 @@ def:pub app -> JsxElement {
                     </Button>
                 </div>
 
-                <Tabs value={tab} onValueChange={lambda (v: str) { tab = v; }} className="hero-rise hero-rise-3 mb-7">
+                <Tabs value={tab} onValueChange={lambda (v: str) { tab = v; }} className="hero-rise hero-rise-3 mb-7 max-w-3xl">
                     <TabsList className="w-full">
                         {tab_trigger("briefing", "Briefing", DashboardSquare01Icon)}
                         {tab_trigger("agenda", "Agenda", InboxIcon)}
@@ -669,42 +667,45 @@ def:pub app -> JsxElement {
 
                 {tab == "briefing" and brief is not None and
                     <div className="space-y-8">
-                        {render_overdue()}
+                        {len(brief.slipping) > 0 and
+                            <div className="max-w-3xl">{render_overdue()}</div>}
                         <section>
-                            <div className="mb-3 flex items-center gap-2.5">
+                            <div className="mb-4 flex items-center gap-2.5">
                                 <span className="h-4 w-1 rounded-full bg-primary" />
                                 <h2 className="font-display text-lg text-foreground">Your week</h2>
                                 <span className="ml-auto text-xs text-muted-foreground">Sun – Sat · tap a task to complete</span>
                             </div>
                             {render_week_board()}
                         </section>
-                        {len(brief.flags) > 0 and
-                            <div className="space-y-2">
-                                {[
-                                    <div key={f} className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm"
-                                         style={{"background": "rgba(176,116,29,0.1)", "color": "var(--clay)", "border": "1px solid rgba(176,116,29,0.22)"}}>
-                                        <HugeiconsIcon icon={Alert02Icon} strokeWidth={2} className="mt-0.5 size-4 shrink-0" />
-                                        <span>{f}</span>
-                                    </div> for f in brief.flags
-                                ]}
-                            </div>
-                        }
-                        {render_dayplan()}
-                        {render_ask()}
-                        {len(suggestions_list) > 0 and
-                            <div className="grid gap-2 sm:grid-cols-2">
-                                {[
-                                    <div key={s} className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
-                                        <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="mt-0.5 size-4 shrink-0 text-primary" />
-                                        <span className="text-foreground">{s}</span>
-                                    </div> for s in suggestions_list
-                                ]}
-                            </div>}
+                        <div className="max-w-3xl space-y-8">
+                            {len(brief.flags) > 0 and
+                                <div className="space-y-2">
+                                    {[
+                                        <div key={f} className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm"
+                                             style={{"background": "rgba(176,116,29,0.1)", "color": "var(--clay)", "border": "1px solid rgba(176,116,29,0.22)"}}>
+                                            <HugeiconsIcon icon={Alert02Icon} strokeWidth={2} className="mt-0.5 size-4 shrink-0" />
+                                            <span>{f}</span>
+                                        </div> for f in brief.flags
+                                    ]}
+                                </div>
+                            }
+                            {render_dayplan()}
+                            {render_ask()}
+                            {len(suggestions_list) > 0 and
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                    {[
+                                        <div key={s} className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
+                                            <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="mt-0.5 size-4 shrink-0 text-primary" />
+                                            <span className="text-foreground">{s}</span>
+                                        </div> for s in suggestions_list
+                                    ]}
+                                </div>}
+                        </div>
                     </div>
                 }
 
                 {tab == "agenda" and
-                    <div className="space-y-5">
+                    <div className="max-w-3xl space-y-5">
                         <div className="rounded-2xl border border-border bg-card p-3">
                             <Input className="w-full border-0 bg-transparent px-1 text-base shadow-none focus-visible:ring-0" value={new_title}
                                    placeholder="Add an item..."
@@ -759,7 +760,7 @@ def:pub app -> JsxElement {
                 }
 
                 {tab == "insight" and analytics is not None and
-                    <div className="space-y-8">
+                    <div className="max-w-3xl space-y-8">
                         <div className="ink-card rounded-2xl p-6">
                             <div className="mb-4 flex items-center justify-between">
                                 <div className="flex items-center gap-2.5">
@@ -843,7 +844,7 @@ def:pub app -> JsxElement {
                 }
 
                 {tab == "settings" and
-                    <div className="space-y-5">
+                    <div className="max-w-3xl space-y-5">
                         <Card>
                             <CardHeader>
                                 <div className="flex items-center justify-between">
