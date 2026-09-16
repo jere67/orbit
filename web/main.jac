@@ -3,9 +3,36 @@
 A single reactive component with four tabs (Briefing, Agenda, Insight,
 Settings) plus an always-on natural-language capture bar. Every action calls
 the shared core endpoints over the transparent client bridge.
+
+The look is warm and editorial - a paper-cream page with a single coral accent
+and warm near-black "ink" cards for the agentic surfaces (the day plan and Ask
+Orbit), so the parts where Orbit thinks feel distinct from the plain lists. Built
+on jac-shadcn primitives (re-skinned via tokens in styles.css), Hugeicons, and
+Bricolage Grotesque / Instrument Sans.
 """
 
+import "./styles/global.css";
 import "./styles.css";
+
+import from "@hugeicons/react" { HugeiconsIcon }
+import from "@hugeicons/core-free-icons" {
+    SparklesIcon, AiMagicIcon, Sun03Icon, DashboardSquare01Icon,
+    AnalyticsUpIcon, Settings02Icon, Add01Icon, ArrowRight01Icon, Alert02Icon,
+    MoreHorizontalIcon, Delete02Icon, Tick02Icon, Fire02Icon, RefreshIcon,
+    Link01Icon, Archive02Icon, Target02Icon, InboxIcon
+}
+
+import from ..components.ui.button { Button }
+import from ..components.ui.card { Card, CardHeader, CardTitle, CardContent }
+import from ..components.ui.tabs { Tabs, TabsList, TabsTrigger }
+import from ..components.ui.input { Input }
+import from ..components.ui.select { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem }
+import from ..components.ui.dropdown_menu {
+    DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup,
+    DropdownMenuItem, DropdownMenuSeparator
+}
+import from ..components.ui.progress { Progress }
+import from ..components.ui.skeleton { Skeleton }
 
 import from core.orbit.items {
     list_items, add_item, complete_item, delete_item,
@@ -22,6 +49,9 @@ import from core.orbit.demo { seed_demo }
 import from core.orbit.model { Item, Area, Priority, Status, ItemKind, Briefing, Analytics, DayPlan, WeekOutlook }
 
 
+glob MONTHS: list = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+
 def prio_label(p: Priority) -> str {
     if p == Priority.CRITICAL { return "Critical"; }
     if p == Priority.HIGH { return "High"; }
@@ -35,6 +65,23 @@ def kind_label(k: ItemKind) -> str {
     if k == ItemKind.EVENT { return "Event"; }
     if k == ItemKind.SESSION { return "Session"; }
     return "Task";
+}
+
+
+"""Format an ISO date ('2026-09-15') as a warm short label ('Sep 15')."""
+def short_date(iso: str) -> str {
+    if not iso or len(iso) < 10 {
+        return "";
+    }
+    mi = int(iso[5:7]) - 1;
+    if mi < 0 or mi > 11 {
+        return iso[:10];
+    }
+    day = iso[8:10];
+    if day.startswith("0") {
+        day = day[1:];
+    }
+    return MONTHS[mi] + " " + day;
 }
 
 
@@ -222,99 +269,115 @@ def:pub app -> JsxElement {
         return None;
     }
 
-    def item_meta(it: Item) -> str {
-        parts = [kind_label(it.kind), prio_label(it.priority)];
-        if it.due {
-            parts.append(it.due[:10]);
-        }
-        if it.effort_min {
-            parts.append(f"{it.effort_min}m");
-        }
-        return "  ·  ".join(parts);
-    }
+    # --- Presentational pieces ------------------------------------------------
 
     def render_subtasks(id: str) -> JsxElement {
         my_subs = expanded_subs;
         return
-            <div class="mt-2 space-y-2 rounded-xl border border-dashed p-3"
-                 style={{"borderColor": "var(--border)"}}>
+            <div className="mt-2 space-y-2 rounded-xl border border-dashed border-border bg-secondary/40 p-3">
                 {len(my_subs) == 0 and
-                    <p class="text-xs" style={{"color": "var(--muted)"}}>
-                        No steps yet. Add one below, or break it down with AI.
+                    <p className="text-xs text-muted-foreground">
+                        No steps yet. Add one below, or let Orbit break it down for you.
                     </p>}
                 {[
-                    <div key={jid(s)} class="flex items-center gap-2">
+                    <div key={jid(s)} className="flex items-center gap-2">
                         <input type="checkbox" checked={s.done}
+                               className="size-4 accent-primary"
                                onChange={lambda { do_toggle_subtask(id, jid(s)); }} />
-                        <span class={"text-sm " + ("line-through opacity-50" if s.done else "")}>
+                        <span className={"text-sm " + ("text-muted-foreground line-through" if s.done else "")}>
                             {s.title}
                         </span>
                     </div> for s in my_subs
                 ]}
-                <div class="flex gap-2 pt-1">
-                    <input class="flex-1 rounded-lg px-2 py-1 text-sm" value={new_subtask}
+                <div className="flex gap-2 pt-1">
+                    <Input className="h-8 flex-1 text-sm" value={new_subtask}
                            placeholder="Add a step"
-                           style={{"background": "var(--surface-2)"}}
                            onChange={lambda (e: ChangeEvent) { new_subtask = e.target.value; }}
                            onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { do_add_subtask(id); } }} />
-                    <button onClick={lambda (e: MouseEvent) { do_add_subtask(id); }}
-                            class="rounded-lg px-3 py-1 text-xs" style={{"background": "var(--surface-2)"}}>
-                        Add step
-                    </button>
-                    <button onClick={lambda (e: MouseEvent) { do_breakdown(id); }}
-                            class="rounded-lg px-3 py-1 text-xs font-medium text-white"
-                            style={{"background": "var(--accent)", "opacity": "0.6" if busy else "1"}}
+                    <Button variant="outline" size="sm"
+                            onClick={lambda (e: MouseEvent) { do_add_subtask(id); }}>
+                        Add
+                    </Button>
+                    <Button size="sm"
+                            onClick={lambda (e: MouseEvent) { do_breakdown(id); }}
                             title="Break this item into steps with AI">
-                        {"Thinking..." if busy else "Break down with AI"}
-                    </button>
+                        <HugeiconsIcon icon={AiMagicIcon} strokeWidth={2} className="size-3.5" />
+                        {"Thinking..." if busy else "Break down"}
+                    </Button>
                 </div>
+            </div>;
+    }
+
+    def meta_chips(it: Item) -> JsxElement {
+        return
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="rounded-md bg-secondary px-1.5 py-0.5 text-secondary-foreground">{kind_label(it.kind)}</span>
+                {it.due and
+                    <span className="rounded-md bg-secondary px-1.5 py-0.5 text-secondary-foreground">{short_date(it.due)}</span>}
+                {it.priority == Priority.CRITICAL and
+                    <span className="rounded-md bg-primary/12 px-1.5 py-0.5 font-medium text-primary">Critical</span>}
+                {it.priority == Priority.HIGH and
+                    <span className="rounded-md px-1.5 py-0.5 font-medium" style={{"color": "var(--clay)", "background": "rgba(176,116,29,0.12)"}}>High</span>}
+                {it.effort_min > 0 and
+                    <span className="text-muted-foreground">{str(it.effort_min)} min</span>}
             </div>;
     }
 
     def render_item(it: Item) -> JsxElement {
         area = area_for(it.area_key);
-        color = area.color if area is not None else "#64748b";
+        color = area.color if area is not None else "#ff5c45";
         label = area.label if area is not None else it.area_key;
         done = it.status == Status.DONE or it.status == Status.SKIPPED;
         id = jid(it);
         is_open = expanded == id;
         return
             <div key={id}>
-                <div class="flex items-start gap-3 rounded-xl border p-3"
-                     style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
+                <div className="group flex items-start gap-3 rounded-xl border border-border bg-card p-3.5 shadow-[0_1px_2px_rgba(36,32,27,0.04)] transition-colors hover:border-[color-mix(in_oklab,var(--foreground)_18%,transparent)]">
                     <button
                         onClick={lambda (e: MouseEvent) { do_complete(id); }}
-                        title="Complete"
-                        class="mt-1 h-5 w-5 shrink-0 rounded-full border-2"
-                        style={{"borderColor": color, "background": color if done else "transparent"}}
-                    />
-                    <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-2">
-                            <span
-                                class="rounded-full px-2 py-0.5 text-xs font-medium"
-                                style={{"background": color + "22", "color": color}}>
+                        title="Mark complete"
+                        className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-transform hover:scale-110"
+                        style={{"borderColor": color, "background": color if done else "transparent"}}>
+                        {done and <HugeiconsIcon icon={Tick02Icon} strokeWidth={3} className="size-3 text-white" />}
+                    </button>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full px-2 py-0.5 text-xs font-medium"
+                                  style={{"background": color + "1f", "color": color}}>
                                 {label}
                             </span>
-                            <span class={"truncate text-sm " + ("line-through opacity-50" if done else "")}>
+                            <span className={"truncate text-[0.95rem] " + ("text-muted-foreground line-through" if done else "text-foreground")}>
                                 {it.title}
                             </span>
                         </div>
-                        <div class="mt-1 text-xs" style={{"color": "var(--muted)"}}>{item_meta(it)}</div>
+                        {meta_chips(it)}
                     </div>
-                    <button
-                        onClick={lambda (e: MouseEvent) { toggle_expand(id); }}
-                        class="rounded-lg px-2 py-1 text-xs"
-                        style={{"color": "var(--accent)" if is_open else "var(--muted)"}}
-                        title="Steps and AI breakdown">
-                        Steps
-                    </button>
-                    <button
-                        onClick={lambda (e: MouseEvent) { do_delete(id); }}
-                        class="rounded-lg px-2 py-1 text-xs"
-                        style={{"color": "var(--muted)"}}
-                        title="Delete">
-                        ✕
-                    </button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild={True}>
+                            <Button variant="ghost" size="icon-sm"
+                                    className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                                    title="Actions">
+                                <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={2} className="size-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-52">
+                            <DropdownMenuGroup>
+                                <DropdownMenuItem onSelect={lambda { toggle_expand(id); }}>
+                                    <HugeiconsIcon icon={AiMagicIcon} strokeWidth={2} className="size-4" />
+                                    {"Hide steps" if is_open else "Steps & breakdown"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={lambda { do_complete(id); }}>
+                                    <HugeiconsIcon icon={Tick02Icon} strokeWidth={2} className="size-4" />
+                                    Mark complete
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem variant="destructive" onSelect={lambda { do_delete(id); }}>
+                                    <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} className="size-4" />
+                                    Delete
+                                </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
                 {is_open and render_subtasks(id)}
             </div>;
@@ -322,320 +385,408 @@ def:pub app -> JsxElement {
 
     def render_dayplan -> JsxElement {
         return
-            <div class="rounded-2xl border p-4"
-                 style={{"borderColor": "var(--accent)", "background": "linear-gradient(180deg, rgba(99,102,241,0.12), transparent)"}}>
-                <div class="mb-3 flex items-center gap-2">
-                    <span class="text-xs font-semibold uppercase tracking-wide" style={{"color": "var(--accent)"}}>Day at a glance</span>
-                    {dayplan_busy and <span class="text-xs" style={{"color": "var(--muted)"}}>refining with AI…</span>}
+            <div className="ink-card overflow-hidden rounded-2xl p-6">
+                <div className="mb-4 flex items-center gap-2.5">
+                    <span className="flex size-8 items-center justify-center rounded-lg" style={{"background": "rgba(255,92,69,0.16)", "color": "var(--primary)"}}>
+                        <HugeiconsIcon icon={Sun03Icon} strokeWidth={2} className="size-4" />
+                    </span>
+                    <span className="font-display text-base" style={{"color": "var(--ink-fg)"}}>Today at a glance</span>
+                    {dayplan_busy and
+                        <span className="ink-muted flex items-center gap-1 text-xs">
+                            <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-3 animate-pulse" />
+                            thinking
+                        </span>}
                 </div>
+                {dayplan is None and
+                    <div className="space-y-2">
+                        <Skeleton className="h-4 w-2/3" />
+                        <Skeleton className="h-4 w-1/2" />
+                    </div>}
                 {dayplan is not None and
-                    <div class="space-y-3">
-                        <p class="text-sm">{dayplan.greeting}</p>
-                        <div class="space-y-2">
+                    <div className="space-y-5">
+                        <p className="text-lg leading-relaxed" style={{"color": "var(--ink-fg)"}}>{dayplan.greeting}</p>
+                        <div>
                             {[
-                                <div key={f.title} class="flex gap-3">
-                                    <span class="w-24 shrink-0 text-xs" style={{"color": "var(--muted)"}}>{f.when}</span>
-                                    <div class="min-w-0">
-                                        <div class="text-sm font-medium">{f.title}</div>
-                                        <div class="text-xs" style={{"color": "var(--muted)"}}>{f.why}</div>
+                                <div key={f.title} className="flex gap-3.5">
+                                    <div className="flex flex-col items-center pt-1.5">
+                                        <span className="size-2 rounded-full" style={{"background": "var(--primary)"}} />
+                                        <span className="ink-rule mt-1 w-px flex-1" />
+                                    </div>
+                                    <div className="min-w-0 pb-4">
+                                        <div className="ink-muted text-xs">{f.when}</div>
+                                        <div className="text-[0.95rem] font-medium" style={{"color": "var(--ink-fg)"}}>{f.title}</div>
+                                        <div className="ink-muted text-sm">{f.why}</div>
                                     </div>
                                 </div> for f in dayplan.focus
                             ]}
                         </div>
                         {dayplan.watch_out and
-                            <p class="text-xs" style={{"color": "#f59e0b"}}>⚠ {dayplan.watch_out}</p>}
+                            <div className="flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm" style={{"background": "rgba(255,92,69,0.12)", "color": "#ffb3a6"}}>
+                                <HugeiconsIcon icon={Alert02Icon} strokeWidth={2} className="mt-0.5 size-4 shrink-0" />
+                                <span>{dayplan.watch_out}</span>
+                            </div>}
                     </div>}
             </div>;
     }
 
     def render_ask -> JsxElement {
         return
-            <div class="rounded-2xl border p-4"
-                 style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
-                <div class="mb-2 text-xs font-semibold uppercase tracking-wide" style={{"color": "var(--muted)"}}>Ask Orbit</div>
-                <div class="flex gap-2">
-                    <input class="flex-1 rounded-lg px-3 py-2 text-sm" value={ask_q}
-                           placeholder="e.g. What should I focus on before Friday?"
-                           style={{"background": "var(--surface-2)"}}
-                           onChange={lambda (e: ChangeEvent) { ask_q = e.target.value; }}
-                           onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { do_ask(); } }} />
-                    <button onClick={lambda (e: MouseEvent) { do_ask(); }}
-                            class="shrink-0 rounded-lg px-4 py-2 text-sm font-medium text-white"
-                            style={{"background": "var(--accent)", "opacity": "0.6" if ask_busy else "1"}}>
-                        {"…" if ask_busy else "Ask"}
-                    </button>
+            <div className="ink-card rounded-2xl p-6">
+                <div className="mb-1 flex items-center gap-2.5">
+                    <span className="flex size-8 items-center justify-center rounded-lg" style={{"background": "rgba(255,92,69,0.16)", "color": "var(--primary)"}}>
+                        <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-4" />
+                    </span>
+                    <span className="font-display text-base" style={{"color": "var(--ink-fg)"}}>Ask Orbit</span>
                 </div>
-                {ask_a and <p class="mt-3 whitespace-pre-line text-sm leading-relaxed">{ask_a}</p>}
+                <p className="ink-muted mb-4 text-sm">It reads your real agenda before it answers.</p>
+                <div className="flex gap-2">
+                    <input
+                        className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none focus-visible:border-[color:var(--primary)]"
+                        style={{"background": "rgba(255,255,255,0.06)", "borderColor": "rgba(255,255,255,0.12)", "color": "var(--ink-fg)"}}
+                        value={ask_q}
+                        placeholder="What should I focus on before Friday?"
+                        onChange={lambda (e: ChangeEvent) { ask_q = e.target.value; }}
+                        onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { do_ask(); } }} />
+                    <Button onClick={lambda (e: MouseEvent) { do_ask(); }} disabled={ask_busy}>
+                        {ask_busy and "..."}
+                        {not ask_busy and
+                            <>
+                                Ask
+                                <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={2} className="size-4" />
+                            </>}
+                    </Button>
+                </div>
+                {ask_a and
+                    <p className="mt-4 whitespace-pre-line rounded-lg p-3 text-sm leading-relaxed"
+                       style={{"background": "rgba(255,255,255,0.05)", "color": "var(--ink-fg)"}}>
+                        {ask_a}
+                    </p>}
             </div>;
     }
 
-    def tab_button(id: str, label: str) -> JsxElement {
-        active = tab == id;
+    def section_title(text: str) -> JsxElement {
         return
-            <button
-                key={id}
-                onClick={lambda (e: MouseEvent) { tab = id; }}
-                class="rounded-lg px-3 py-1.5 text-sm font-medium transition"
-                style={{
-                    "background": "var(--accent)" if active else "transparent",
-                    "color": "#fff" if active else "var(--muted)"
-                }}>
-                {label}
-            </button>;
+            <div className="mb-3 flex items-center gap-2.5">
+                <span className="h-4 w-1 rounded-full bg-primary" />
+                <h2 className="font-display text-lg text-foreground">{text}</h2>
+            </div>;
     }
 
+    def stat_card(value: str, label: str, icon: any) -> JsxElement {
+        return
+            <div className="relative overflow-hidden rounded-xl border border-border bg-card p-4">
+                <HugeiconsIcon icon={icon} strokeWidth={2} className="absolute right-3 top-3 size-4 text-muted-foreground/50" />
+                <div className="font-display text-3xl text-foreground">{value}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{label}</div>
+            </div>;
+    }
+
+    def tab_trigger(id: str, label: str, icon: any) -> JsxElement {
+        return
+            <TabsTrigger value={id} className="gap-1.5">
+                <HugeiconsIcon icon={icon} strokeWidth={2} className="size-4" />
+                <span className="hidden sm:inline">{label}</span>
+            </TabsTrigger>;
+    }
+
+    # --- Layout ---------------------------------------------------------------
+
     return
-        <div class="mx-auto min-h-screen max-w-3xl px-4 pb-24 pt-8">
-            <header class="mb-6">
-                <div class="flex items-center gap-2">
-                    <div class="h-6 w-6 rounded-full"
-                         style={{"background": "linear-gradient(135deg,#6366f1,#ec4899)"}} />
-                    <h1 class="text-xl font-semibold tracking-tight">Orbit</h1>
-                    <span class="text-xs" style={{"color": "var(--muted)"}}>the agenda that thinks</span>
+        <div className="relative min-h-screen">
+            <header className="glass sticky top-0 z-20 border-b border-border">
+                <div className="mx-auto flex max-w-3xl items-center gap-2.5 px-4 py-3.5">
+                    <span className="orbit-mark size-6 rounded-full" />
+                    <span className="font-display text-[1.05rem] text-foreground">Orbit</span>
+                    <span className="hidden text-sm text-muted-foreground sm:inline">· the agenda that thinks</span>
                 </div>
-                <p class="mt-3 text-sm leading-relaxed" style={{"color": "var(--text)"}}>
-                    {brief.headline if brief is not None else "Loading your day..."}
-                </p>
             </header>
 
-            <div class="mb-5 flex gap-2 rounded-xl border p-2"
-                 style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
-                <input
-                    class="flex-1 bg-transparent px-2 text-sm outline-none"
-                    value={capture_text}
-                    placeholder="Capture anything: 'read FlashAttention paper by friday'"
-                    onChange={lambda (e: ChangeEvent) { capture_text = e.target.value; }}
-                    onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { do_capture(); } }}
-                />
-                <button
-                    onClick={lambda (e: MouseEvent) { do_capture(); }}
-                    class="rounded-lg px-3 py-1.5 text-sm font-medium text-white"
-                    style={{"background": "var(--accent)", "opacity": "0.6" if busy else "1"}}>
-                    {"Thinking..." if busy else "Capture"}
-                </button>
-            </div>
+            <main className="mx-auto max-w-3xl px-4 pb-28 pt-10">
+                <div className="hero-rise mb-6">
+                    <h1 className="font-display text-[2rem] leading-[1.1] text-foreground sm:text-[2.6rem]">
+                        {brief.headline if brief is not None else "Bringing your day into focus."}
+                    </h1>
+                    <p className="mt-3 max-w-xl text-[0.95rem] leading-relaxed text-muted-foreground">
+                        One calm place for research, coursework, work, and everything else - with a plan for what to do first.
+                    </p>
+                </div>
 
-            <nav class="mb-5 flex gap-1">
-                {tab_button("briefing", "Briefing")}
-                {tab_button("agenda", "Agenda")}
-                {tab_button("insight", "Insight")}
-                {tab_button("settings", "Settings")}
-            </nav>
+                <div className="hero-rise hero-rise-2 mb-8 flex items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-[0_2px_10px_rgba(36,32,27,0.05)]">
+                    <span className="pl-1.5 text-primary">
+                        <HugeiconsIcon icon={AiMagicIcon} strokeWidth={2} className="size-5" />
+                    </span>
+                    <input
+                        className="flex-1 bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                        value={capture_text}
+                        placeholder="Capture anything - 'read the FlashAttention paper by Friday'"
+                        onChange={lambda (e: ChangeEvent) { capture_text = e.target.value; }}
+                        onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { do_capture(); } }}
+                    />
+                    <Button onClick={lambda (e: MouseEvent) { do_capture(); }} disabled={busy}>
+                        {busy and "Thinking..."}
+                        {not busy and
+                            <>
+                                <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-4" />
+                                Capture
+                            </>}
+                    </Button>
+                </div>
 
-            {tab == "briefing" and brief is not None and
-                <div class="space-y-6">
-                    {render_dayplan()}
-                    {render_ask()}
-                    {len(suggestions_list) > 0 and
-                        <div class="space-y-1">
-                            {[
-                                <div key={s} class="rounded-lg border px-3 py-2 text-sm"
-                                     style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
-                                    💡 {s}
-                                </div> for s in suggestions_list
-                            ]}
-                        </div>}
-                    {len(brief.flags) > 0 and
-                        <div class="space-y-1">
-                            {[
-                                <div key={f} class="rounded-lg border px-3 py-2 text-sm"
-                                     style={{"borderColor": "#f59e0b55", "background": "#f59e0b11", "color": "#f59e0b"}}>
-                                    ⚠ {f}
-                                </div> for f in brief.flags
-                            ]}
-                        </div>
-                    }
-                    <section>
-                        <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide"
-                            style={{"color": "var(--muted)"}}>Today</h2>
-                        {len(brief.today) == 0 and
-                            <p class="text-sm" style={{"color": "var(--muted)"}}>Nothing due today.</p>}
-                        <div class="space-y-2">{[render_item(it) for it in brief.today]}</div>
-                    </section>
-                    {len(brief.slipping) > 0 and
+                <Tabs value={tab} onValueChange={lambda (v: str) { tab = v; }} className="hero-rise hero-rise-3 mb-7">
+                    <TabsList className="w-full">
+                        {tab_trigger("briefing", "Briefing", DashboardSquare01Icon)}
+                        {tab_trigger("agenda", "Agenda", InboxIcon)}
+                        {tab_trigger("insight", "Insight", AnalyticsUpIcon)}
+                        {tab_trigger("settings", "Settings", Settings02Icon)}
+                    </TabsList>
+                </Tabs>
+
+                {tab == "briefing" and brief is not None and
+                    <div className="space-y-8">
+                        {render_dayplan()}
+                        {render_ask()}
+                        {len(suggestions_list) > 0 and
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                {[
+                                    <div key={s} className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
+                                        <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="mt-0.5 size-4 shrink-0 text-primary" />
+                                        <span className="text-foreground">{s}</span>
+                                    </div> for s in suggestions_list
+                                ]}
+                            </div>}
+                        {len(brief.flags) > 0 and
+                            <div className="space-y-2">
+                                {[
+                                    <div key={f} className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm"
+                                         style={{"background": "rgba(176,116,29,0.1)", "color": "var(--clay)", "border": "1px solid rgba(176,116,29,0.22)"}}>
+                                        <HugeiconsIcon icon={Alert02Icon} strokeWidth={2} className="mt-0.5 size-4 shrink-0" />
+                                        <span>{f}</span>
+                                    </div> for f in brief.flags
+                                ]}
+                            </div>
+                        }
                         <section>
-                            <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide"
-                                style={{"color": "#ef4444"}}>Slipping</h2>
-                            <div class="space-y-2">{[render_item(it) for it in brief.slipping]}</div>
+                            {section_title("Today")}
+                            {len(brief.today) == 0 and
+                                <p className="text-sm text-muted-foreground">Nothing due today - enjoy the breathing room.</p>}
+                            <div className="space-y-2.5">{[render_item(it) for it in brief.today]}</div>
                         </section>
-                    }
-                    <section>
-                        <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide"
-                            style={{"color": "var(--muted)"}}>This week</h2>
-                        <div class="space-y-3">
-                            {[
-                                <div key={b.date}>
-                                    <div class="mb-1 flex items-center justify-between text-xs"
-                                         style={{"color": "var(--muted)"}}>
-                                        <span>{b.label}</span>
-                                        <span>{len(b.items)} items · {b.effort_min}m</span>
-                                    </div>
-                                    <div class="space-y-2">{[render_item(it) for it in b.items]}</div>
-                                </div> for b in brief.week if len(b.items) > 0
-                            ]}
-                        </div>
-                    </section>
-                </div>
-            }
-
-            {tab == "agenda" and
-                <div class="space-y-4">
-                    <div class="flex flex-wrap items-center gap-2 rounded-xl border p-3"
-                         style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
-                        <input class="min-w-[10rem] flex-1 rounded-lg px-2 py-1.5 text-sm" value={new_title}
-                               placeholder="New item title"
-                               style={{"background": "var(--surface-2)"}}
-                               onChange={lambda (e: ChangeEvent) { new_title = e.target.value; }}
-                               onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { do_add_item(); } }} />
-                        <select class="rounded-lg px-2 py-1.5 text-sm" value={new_area}
-                                style={{"background": "var(--surface-2)"}}
-                                onChange={lambda (e: ChangeEvent) { new_area = e.target.value; }}>
-                            {[<option key={a.key} value={a.key}>{a.label}</option> for a in areas if not a.archived]}
-                        </select>
-                        <input type="date" class="rounded-lg px-2 py-1.5 text-sm" value={new_due}
-                               style={{"background": "var(--surface-2)"}}
-                               onChange={lambda (e: ChangeEvent) { new_due = e.target.value; }} />
-                        <button onClick={lambda (e: MouseEvent) { do_add_item(); }}
-                                class="shrink-0 rounded-lg px-4 py-1.5 text-sm font-medium text-white"
-                                style={{"background": "var(--accent)"}}>Add</button>
+                        {len(brief.slipping) > 0 and
+                            <section>
+                                {section_title("Slipping")}
+                                <div className="space-y-2.5">{[render_item(it) for it in brief.slipping]}</div>
+                            </section>
+                        }
+                        <section>
+                            {section_title("This week")}
+                            <div className="space-y-5">
+                                {[
+                                    <div key={b.date}>
+                                        <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                                            <span className="text-sm font-medium text-foreground">{b.label}</span>
+                                            <span>{len(b.items)} items · {b.effort_min} min</span>
+                                        </div>
+                                        <div className="space-y-2.5">{[render_item(it) for it in b.items]}</div>
+                                    </div> for b in brief.week if len(b.items) > 0
+                                ]}
+                            </div>
+                        </section>
                     </div>
-                    <div class="space-y-2">
-                        {len(items) == 0 and
-                            <div class="rounded-xl border border-dashed p-6 text-center"
-                                 style={{"borderColor": "var(--border)"}}>
-                                <p class="text-sm" style={{"color": "var(--muted)"}}>No items yet.</p>
-                                <button onClick={lambda (e: MouseEvent) { do_seed(); }}
-                                        class="mt-3 rounded-lg px-3 py-1.5 text-sm font-medium text-white"
-                                        style={{"background": "var(--accent)"}}>Load a sample week</button>
-                            </div>}
-                        {[render_item(it) for it in items]}
-                    </div>
-                </div>
-            }
+                }
 
-            {tab == "insight" and analytics is not None and
-                <div class="space-y-6">
-                    <section class="rounded-2xl border p-4"
-                             style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
-                        <div class="mb-2 flex items-center justify-between">
-                            <span class="text-xs font-semibold uppercase tracking-wide" style={{"color": "var(--muted)"}}>Weekly overview</span>
-                            <button onClick={lambda (e: MouseEvent) { load_outlook(); }}
-                                    class="rounded-lg px-3 py-1 text-xs font-medium text-white"
-                                    style={{"background": "var(--accent)", "opacity": "0.6" if outlook_busy else "1"}}>
-                                {"Thinking…" if outlook_busy else ("Refresh" if outlook is not None else "Generate")}
-                            </button>
+                {tab == "agenda" and
+                    <div className="space-y-5">
+                        <div className="rounded-2xl border border-border bg-card p-3">
+                            <Input className="w-full border-0 bg-transparent px-1 text-base shadow-none focus-visible:ring-0" value={new_title}
+                                   placeholder="Add an item..."
+                                   onChange={lambda (e: ChangeEvent) { new_title = e.target.value; }}
+                                   onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { do_add_item(); } }} />
+                            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                                <Select value={new_area} onValueChange={lambda (v: str) { new_area = v; }}>
+                                    <SelectTrigger className="min-w-[8rem] flex-1">
+                                        <SelectValue placeholder="Area" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectGroup>
+                                            {[<SelectItem key={a.key} value={a.key}>{a.label}</SelectItem> for a in areas if not a.archived]}
+                                        </SelectGroup>
+                                    </SelectContent>
+                                </Select>
+                                <Select value={new_priority} onValueChange={lambda (v: str) { new_priority = v; }}>
+                                    <SelectTrigger className="w-28">
+                                        <SelectValue placeholder="Priority" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectGroup>
+                                            <SelectItem value="LOW">Low</SelectItem>
+                                            <SelectItem value="MED">Med</SelectItem>
+                                            <SelectItem value="HIGH">High</SelectItem>
+                                            <SelectItem value="CRITICAL">Critical</SelectItem>
+                                        </SelectGroup>
+                                    </SelectContent>
+                                </Select>
+                                <input type="date"
+                                       className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-foreground outline-none focus-visible:border-ring"
+                                       value={new_due}
+                                       onChange={lambda (e: ChangeEvent) { new_due = e.target.value; }} />
+                                <Button className="shrink-0" onClick={lambda (e: MouseEvent) { do_add_item(); }}>
+                                    <HugeiconsIcon icon={Add01Icon} strokeWidth={2} className="size-4" />
+                                    Add
+                                </Button>
+                            </div>
                         </div>
-                        {outlook is not None and
-                            <div class="space-y-2">
-                                <p class="text-sm">{outlook.summary}</p>
-                                {outlook.busiest_day and
-                                    <p class="text-xs" style={{"color": "var(--muted)"}}>Busiest day: {outlook.busiest_day}</p>}
-                                {[<p key={r} class="text-xs" style={{"color": "#f59e0b"}}>⚠ {r}</p> for r in outlook.risks]}
-                                {outlook.suggestion and
-                                    <p class="text-sm" style={{"color": "var(--accent)"}}>→ {outlook.suggestion}</p>}
-                            </div>}
-                        {outlook is None and not outlook_busy and
-                            <p class="text-xs" style={{"color": "var(--muted)"}}>Generate an AI outlook of your week ahead.</p>}
-                    </section>
-                    <section class="grid grid-cols-3 gap-3">
-                        <div class="rounded-xl border p-3" style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
-                            <div class="text-2xl font-semibold">{analytics.streaks.current}</div>
-                            <div class="text-xs" style={{"color": "var(--muted)"}}>day streak</div>
-                        </div>
-                        <div class="rounded-xl border p-3" style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
-                            <div class="text-2xl font-semibold">{analytics.completion.completed_7}</div>
-                            <div class="text-xs" style={{"color": "var(--muted)"}}>done this week</div>
-                        </div>
-                        <div class="rounded-xl border p-3" style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
-                            <div class="text-2xl font-semibold">{round(analytics.completion.rate_7 * 100)}%</div>
-                            <div class="text-xs" style={{"color": "var(--muted)"}}>7-day completion</div>
-                        </div>
-                    </section>
-                    <section>
-                        <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide" style={{"color": "var(--muted)"}}>Area load</h2>
-                        <div class="space-y-2">
-                            {[
-                                <div key={r.key}>
-                                    <div class="mb-1 flex justify-between text-xs">
-                                        <span>{r.label}</span>
-                                        <span style={{"color": "var(--muted)"}}>{r.open_items} open · {r.open_effort_min}m</span>
-                                    </div>
-                                    <div class="h-2 overflow-hidden rounded-full" style={{"background": "var(--surface-2)"}}>
-                                        <div class="h-full rounded-full"
-                                             style={{"width": str(min(100, r.open_effort_min // 6)) + "%", "background": r.color}} />
-                                    </div>
-                                </div> for r in analytics.area_load if r.open_items > 0
-                            ]}
-                        </div>
-                    </section>
-                    <section>
-                        <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide" style={{"color": "var(--muted)"}}>Next 14 days</h2>
-                        <div class="flex items-end gap-1" style={{"height": "80px"}}>
-                            {[
-                                <div key={d.date} class="flex flex-1 flex-col items-center justify-end gap-1"
-                                     title={d.label + ": " + str(d.count)}>
-                                    <div class="w-full rounded-t"
-                                         style={{"height": str(max(4, d.count * 16)) + "px", "background": "var(--accent)" if d.count > 0 else "var(--surface-2)"}} />
-                                </div> for d in analytics.density
-                            ]}
-                        </div>
-                    </section>
-                </div>
-            }
-
-            {tab == "settings" and
-                <div class="space-y-4">
-                    <div class="rounded-xl border p-3"
-                         style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
-                        <div class="mb-2 flex items-center justify-between">
-                            <span class="text-xs font-semibold uppercase tracking-wide" style={{"color": "var(--muted)"}}>Connectors</span>
-                            <button onClick={lambda (e: MouseEvent) { do_sync(); }}
-                                    class="rounded-lg px-3 py-1 text-xs font-medium text-white"
-                                    style={{"background": "var(--accent)", "opacity": "0.6" if syncing else "1"}}>
-                                {"Syncing…" if syncing else "Sync now"}
-                            </button>
-                        </div>
-                        <div class="space-y-1">
-                            {[
-                                <div key={c.name} class="flex items-center gap-2 text-sm">
-                                    <span class="h-2 w-2 shrink-0 rounded-full"
-                                          style={{"background": "#10b981" if c.configured else "var(--border)"}} />
-                                    <span>{c.label}</span>
-                                    <span class="text-xs" style={{"color": "var(--muted)"}}>
-                                        {"connected" if c.configured else "not configured - see .env.example"}
+                        <div className="space-y-2.5">
+                            {len(items) == 0 and
+                                <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border p-12 text-center">
+                                    <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                                        <HugeiconsIcon icon={InboxIcon} strokeWidth={2} className="size-6" />
                                     </span>
-                                </div> for c in connectors
+                                    <p className="text-sm text-muted-foreground">Your agenda is empty.</p>
+                                    <Button onClick={lambda (e: MouseEvent) { do_seed(); }}>Load a sample week</Button>
+                                </div>}
+                            {[render_item(it) for it in items]}
+                        </div>
+                    </div>
+                }
+
+                {tab == "insight" and analytics is not None and
+                    <div className="space-y-8">
+                        <div className="ink-card rounded-2xl p-6">
+                            <div className="mb-4 flex items-center justify-between">
+                                <div className="flex items-center gap-2.5">
+                                    <span className="flex size-8 items-center justify-center rounded-lg" style={{"background": "rgba(255,92,69,0.16)", "color": "var(--primary)"}}>
+                                        <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-4" />
+                                    </span>
+                                    <span className="font-display text-base" style={{"color": "var(--ink-fg)"}}>Weekly overview</span>
+                                </div>
+                                <Button size="sm" onClick={lambda (e: MouseEvent) { load_outlook(); }} disabled={outlook_busy}>
+                                    {outlook_busy and "Thinking..."}
+                                    {not outlook_busy and ("Refresh" if outlook is not None else "Generate")}
+                                </Button>
+                            </div>
+                            {outlook is not None and
+                                <div className="space-y-2.5">
+                                    <p className="text-[0.95rem] leading-relaxed" style={{"color": "var(--ink-fg)"}}>{outlook.summary}</p>
+                                    {outlook.busiest_day and
+                                        <p className="ink-muted text-sm">Busiest day: {outlook.busiest_day}</p>}
+                                    {[
+                                        <p key={r} className="flex items-center gap-1.5 text-sm" style={{"color": "#ffb3a6"}}>
+                                            <HugeiconsIcon icon={Alert02Icon} strokeWidth={2} className="size-3.5" />{r}
+                                        </p> for r in outlook.risks
+                                    ]}
+                                    {outlook.suggestion and
+                                        <p className="flex items-center gap-1.5 pt-1 text-[0.95rem]" style={{"color": "var(--primary)"}}>
+                                            <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={2} className="size-4" />{outlook.suggestion}
+                                        </p>}
+                                </div>}
+                            {outlook is None and not outlook_busy and
+                                <p className="ink-muted text-sm">Generate an AI outlook of your week ahead.</p>}
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                            {stat_card(str(analytics.streaks.current), "day streak", Fire02Icon)}
+                            {stat_card(str(analytics.completion.completed_7), "done this week", Tick02Icon)}
+                            {stat_card(str(round(analytics.completion.rate_7 * 100)) + "%", "7-day completion", Target02Icon)}
+                        </div>
+
+                        <section>
+                            {section_title("Area load")}
+                            <div className="space-y-3.5">
+                                {[
+                                    <div key={r.key}>
+                                        <div className="mb-1.5 flex justify-between text-xs">
+                                            <span className="flex items-center gap-1.5 font-medium text-foreground">
+                                                <span className="size-2 rounded-full" style={{"background": r.color}} />
+                                                {r.label}
+                                            </span>
+                                            <span className="text-muted-foreground">{r.open_items} open · {r.open_effort_min} min</span>
+                                        </div>
+                                        <Progress value={min(100, r.open_effort_min // 6)} className="h-2" />
+                                    </div> for r in analytics.area_load if r.open_items > 0
+                                ]}
+                            </div>
+                        </section>
+
+                        <section>
+                            {section_title("Next 14 days")}
+                            <div className="flex items-end gap-1.5 rounded-2xl border border-border bg-card p-4" style={{"height": "112px"}}>
+                                {[
+                                    <div key={d.date} className="flex flex-1 flex-col items-center justify-end gap-1"
+                                         title={d.label + ": " + str(d.count)}>
+                                        <div className="w-full rounded-t-md transition-all"
+                                             style={{
+                                                "height": str(max(4, d.count * 16)) + "px",
+                                                "background": "var(--primary)" if d.count > 0 else "var(--muted)"
+                                             }} />
+                                    </div> for d in analytics.density
+                                ]}
+                            </div>
+                        </section>
+                    </div>
+                }
+
+                {tab == "settings" and
+                    <div className="space-y-5">
+                        <Card>
+                            <CardHeader>
+                                <div className="flex items-center justify-between">
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <HugeiconsIcon icon={Link01Icon} strokeWidth={2} className="size-4 text-primary" />
+                                        Connectors
+                                    </CardTitle>
+                                    <Button size="sm" onClick={lambda (e: MouseEvent) { do_sync(); }} disabled={syncing}>
+                                        <HugeiconsIcon icon={RefreshIcon} strokeWidth={2} className={"size-4 " + ("animate-spin" if syncing else "")} />
+                                        {"Syncing..." if syncing else "Sync now"}
+                                    </Button>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="space-y-2">
+                                {[
+                                    <div key={c.name} className="flex items-center gap-2.5 rounded-lg border border-border bg-secondary/40 px-3 py-2.5 text-sm">
+                                        <span className="size-2 shrink-0 rounded-full"
+                                              style={{"background": "#3f9e5a" if c.configured else "var(--muted-foreground)"}} />
+                                        <span className="font-medium text-foreground">{c.label}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                            {"connected" if c.configured else "not configured - see .env.example"}
+                                        </span>
+                                    </div> for c in connectors
+                                ]}
+                            </CardContent>
+                        </Card>
+
+                        <div className="flex gap-2 rounded-2xl border border-border bg-card p-3">
+                            <Input className="flex-1" value={new_area_label}
+                                   placeholder="New area name (e.g. Thesis)"
+                                   onChange={lambda (e: ChangeEvent) { new_area_label = e.target.value; }}
+                                   onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { do_add_area(); } }} />
+                            <Button onClick={lambda (e: MouseEvent) { do_add_area(); }}>
+                                <HugeiconsIcon icon={Add01Icon} strokeWidth={2} className="size-4" />
+                                Add area
+                            </Button>
+                        </div>
+
+                        <div className="space-y-2.5">
+                            {[
+                                <div key={a.key}
+                                     className={"flex items-center gap-3 rounded-xl border border-border bg-card p-3.5 " + ("opacity-55" if a.archived else "")}>
+                                    <span className="size-4 shrink-0 rounded-full" style={{"background": a.color}} />
+                                    <span className="flex-1 text-sm font-medium text-foreground">{a.label}</span>
+                                    <span className="text-xs text-muted-foreground">{a.key}</span>
+                                    {a.archived and
+                                        <Button size="sm" variant="ghost"
+                                                onClick={lambda (e: MouseEvent) { do_unarchive_area(a.key); }}>
+                                            Unarchive
+                                        </Button>}
+                                    {not a.archived and
+                                        <Button size="icon-sm" variant="ghost" title="Archive"
+                                                onClick={lambda (e: MouseEvent) { do_archive_area(a.key); }}>
+                                            <HugeiconsIcon icon={Archive02Icon} strokeWidth={2} className="size-4" />
+                                        </Button>}
+                                </div> for a in areas
                             ]}
                         </div>
                     </div>
-                    <div class="flex gap-2 rounded-xl border p-3"
-                         style={{"borderColor": "var(--border)", "background": "var(--surface)"}}>
-                        <input class="flex-1 rounded-lg px-2 py-1.5 text-sm" value={new_area_label}
-                               placeholder="New area name (e.g. Thesis)"
-                               style={{"background": "var(--surface-2)"}}
-                               onChange={lambda (e: ChangeEvent) { new_area_label = e.target.value; }} />
-                        <button onClick={lambda (e: MouseEvent) { do_add_area(); }}
-                                class="rounded-lg px-3 py-1.5 text-sm font-medium text-white"
-                                style={{"background": "var(--accent)"}}>Add area</button>
-                    </div>
-                    <div class="space-y-2">
-                        {[
-                            <div key={a.key} class="flex items-center gap-3 rounded-xl border p-3"
-                                 style={{"borderColor": "var(--border)", "background": "var(--surface)", "opacity": "0.5" if a.archived else "1"}}>
-                                <div class="h-4 w-4 rounded-full" style={{"background": a.color}} />
-                                <span class="flex-1 text-sm">{a.label}</span>
-                                <span class="text-xs" style={{"color": "var(--muted)"}}>{a.key}</span>
-                                {a.archived and
-                                    <button onClick={lambda (e: MouseEvent) { do_unarchive_area(a.key); }}
-                                            class="rounded-lg px-2 py-1 text-xs font-medium"
-                                            style={{"color": "var(--accent)"}}>Unarchive</button>}
-                                {not a.archived and
-                                    <button onClick={lambda (e: MouseEvent) { do_archive_area(a.key); }}
-                                            class="rounded-lg px-2 py-1 text-xs" style={{"color": "var(--muted)"}}>Archive</button>}
-                            </div> for a in areas
-                        ]}
-                    </div>
-                </div>
-            }
+                }
+            </main>
         </div>;
 }

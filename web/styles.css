@@ -1,26 +1,63 @@
-@import "tailwindcss";
+/* Orbit visual layer - warm editorial.
+   The shadcn primitives and Tailwind engine live in styles/global.css. This
+   file re-skins the shadcn design tokens to a warm, paper-and-ink palette
+   (cream page, warm near-black cards, a single coral accent) and sets the
+   typographic voice. Because these :root vars are declared unlayered and after
+   global.css, they win the cascade and every shadcn component adopts them. */
 
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600;700&display=swap');
+
+/* --- Warm palette: paper, ink, coral --------------------------------------- */
 :root {
-    --bg: #0b0e14;
-    --surface: #141925;
-    --surface-2: #1c2230;
-    --border: #2a3244;
-    --text: #e6e9ef;
-    --muted: #94a1b8;
-    --accent: #6366f1;
+    --background: #f4f1ea;
+    --foreground: #24201b;
+    --card: #ffffff;
+    --card-foreground: #24201b;
+    --popover: #ffffff;
+    --popover-foreground: #24201b;
+    --primary: #ff5c45;
+    --primary-foreground: #ffffff;
+    --secondary: #ece6da;
+    --secondary-foreground: #2a251f;
+    --muted: #ece6da;
+    --muted-foreground: #8a8073;
+    --accent: #f1ebe0;
+    --accent-foreground: #24201b;
+    --destructive: #c0432f;
+    --border: #e4dccf;
+    --input: #ddd4c5;
+    --ring: #ff5c45;
+    --radius: 0.75rem;
+
+    /* Orbit extras (used by hand-authored classes below). */
+    --ink: #211d18;
+    --ink-soft: #2c2721;
+    --ink-fg: #f3efe6;
+    --ink-muted: #b3aa9b;
+    --clay: #b0741d; /* warm ochre for caution, distinct from coral */
 }
 
 * {
     box-sizing: border-box;
 }
 
+/* Unlayered, so these beat global.css's @layer base rules. */
 html, body {
     margin: 0;
     padding: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: 'Instrument Sans', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+/* Bricolage Grotesque carries the display voice: hero line, section headings,
+   and the large stat numbers. Everything else stays in Instrument Sans. */
+.font-display {
+    font-family: 'Bricolage Grotesque', 'Instrument Sans', sans-serif;
+    letter-spacing: -0.02em;
+    font-weight: 600;
 }
 
 button {
@@ -33,5 +70,57 @@ input, textarea, select {
 }
 
 ::placeholder {
-    color: var(--muted);
+    color: var(--muted-foreground);
+}
+
+::selection {
+    background: #ffd9d1;
+    color: #24201b;
+}
+
+/* --- Ink surfaces: the agentic cards (Day at a glance, Ask Orbit) ----------- */
+.ink-card {
+    background:
+        radial-gradient(120% 140% at 100% 0%, rgba(255, 92, 69, 0.14), transparent 55%),
+        var(--ink);
+    color: var(--ink-fg);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.ink-card .ink-muted { color: var(--ink-muted); }
+.ink-card .ink-rule { background: rgba(255, 255, 255, 0.1); }
+
+/* --- Warm translucent header ---------------------------------------------- */
+.glass {
+    background: color-mix(in oklab, var(--background) 84%, transparent);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+}
+
+/* The coral brand mark - a filled disc with a thin orbiting ring. */
+.orbit-mark {
+    background: var(--primary);
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.85), 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* One-time hero entrance (the only non-interactive motion on the page). */
+@keyframes orbit-rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.hero-rise {
+    animation: orbit-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.hero-rise-2 { animation-delay: 0.08s; }
+.hero-rise-3 { animation-delay: 0.16s; }
+
+@media (prefers-reduced-motion: reduce) {
+    .hero-rise, .hero-rise-2, .hero-rise-3 { animation: none; }
+}
+
+/* Warm, thin scrollbar. */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #cabfac transparent;
 }
