@@ -6,6 +6,7 @@ import from .scoring { due_pressure, priority_weight, urgency, rank, is_open }
 import from .timeutil { today_str, add_days, days_between }
 import from .items { next_due, add_item, list_items, complete_item, item_by_id, delete_item }
 import from .ai { _guess_due, _fallback_parse }
+import from .connectors { _ics_date, _unfold, _notion_title, _notion_date }
 
 
 test "no due date has zero pressure" {
@@ -93,4 +94,30 @@ test "unknown area falls back to other" {
     created = add_item(title=marker, area_key="does-not-exist");
     assert created.area_key == "other";
     delete_item(jid(created));
+}
+
+test "ICS date parsing handles date and datetime forms" {
+    assert _ics_date("20260920") == "2026-09-20";
+    assert _ics_date("20260920T150000Z") == "2026-09-20T15:00";
+    assert _ics_date("garbage") == "";
+}
+
+test "ICS line unfolding joins continuation lines" {
+    # RFC 5545: a leading space on a continuation line is the fold marker and
+    # is stripped, so "Team " + "meeting" -> "Team meeting".
+    folded = "SUMMARY:Team \r\n meeting\r\nUID:abc";
+    lines = _unfold(folded);
+    assert "SUMMARY:Team meeting" in lines;
+    assert "UID:abc" in lines;
+}
+
+test "Notion property extraction reads title and date" {
+    props = {
+        "Name": {"title": [{"plain_text": "Read paper"}]},
+        "Due": {"date": {"start": "2026-09-20"}}
+    };
+    assert _notion_title(props, "Name") == "Read paper";
+    assert _notion_date(props, "Due") == "2026-09-20";
+    assert _notion_title(props, "Missing") == "";
+    assert _notion_date(props, "Missing") == "";
 }
