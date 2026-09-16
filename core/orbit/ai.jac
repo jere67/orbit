@@ -6,6 +6,7 @@ model installed and no API key. The default model is set in jac.toml.
 """
 
 import from .model { Item, Subtask }
+import from .llm { orbit_llm }
 import from .briefing { Briefing, get_briefing, plain_headline }
 import from .items { add_item, add_subtask, item_by_id }
 import from .areas { list_areas, area_exists, add_area }
@@ -34,15 +35,15 @@ sem ParsedItem.priority = "One of LOW, MED, HIGH, CRITICAL";
 sem ParsedItem.recurrence = "A rule like WEEKLY:MO,WE,FR when the item repeats, else empty";
 
 
-def narrate(summary: str) -> str by llm();
+def narrate(summary: str) -> str by orbit_llm();
 sem narrate = "Write a warm, concise one-to-two sentence daily briefing for a busy student, given a compact summary of their agenda. Be specific and encouraging, never list every item.";
 
 
-def parse_items(text: str, area_keys: list[str], today: str) -> list[ParsedItem] by llm();
+def parse_items(text: str, area_keys: list[str], today: str) -> list[ParsedItem] by orbit_llm();
 sem parse_items = "Turn a natural-language note into one or more planning items, inferring the area, kind, due date, priority, and any weekly recurrence.";
 
 
-def breakdown(title: str) -> list[str] by llm();
+def breakdown(title: str) -> list[str] by orbit_llm();
 sem breakdown = "Break a larger task into 3-6 concrete, actionable subtask titles.";
 
 
@@ -56,6 +57,12 @@ def _summarize(brief: Briefing) -> str {
         f"Flags: {'; '.join(brief.flags) or 'none'}"
     ];
     return "\n".join(lines);
+}
+
+
+"""The deterministic Briefing (fast, no model) for a snappy first paint."""
+def:pub fast_briefing -> Briefing {
+    return get_briefing();
 }
 
 
