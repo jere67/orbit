@@ -35,7 +35,7 @@ import from ..components.ui.progress { Progress }
 import from ..components.ui.skeleton { Skeleton }
 
 import from core.orbit.items {
-    list_items, add_item, complete_item, delete_item,
+    list_items, add_item, complete_item, set_status, delete_item,
     list_subtasks, add_subtask, toggle_subtask
 }
 import from core.orbit.areas { list_areas, add_area, archive_area }
@@ -46,7 +46,7 @@ import from core.orbit.assistant {
 }
 import from core.orbit.connectors { connector_status, sync_connectors }
 import from core.orbit.demo { seed_demo }
-import from core.orbit.model { Item, Area, Priority, Status, ItemKind, Briefing, Analytics, DayPlan, WeekOutlook }
+import from core.orbit.model { Item, Area, Priority, Status, ItemKind, Briefing, Analytics, DayPlan, WeekOutlook, DayBucket, DensityDay }
 
 
 glob MONTHS: list = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -110,7 +110,8 @@ def:pub app -> JsxElement {
         syncing: bool = False,
         ask_q: str = "",
         ask_a: str = "",
-        ask_busy: bool = False;
+        ask_busy: bool = False,
+        hovered_density: str = "";
 
     async def reload {
         items = await list_items();
@@ -170,8 +171,12 @@ def:pub app -> JsxElement {
         await reload();
     }
 
-    async def do_complete(id: str) {
-        await complete_item(id);
+    async def do_toggle_complete(id: str, done: bool) {
+        if done {
+            await set_status(id, "TODO");
+        } else {
+            await complete_item(id);
+        }
         await reload();
     }
 
@@ -269,6 +274,11 @@ def:pub app -> JsxElement {
         return None;
     }
 
+    def area_color(key: str) -> str {
+        a = area_for(key);
+        return a.color if a is not None else "#ff5c45";
+    }
+
     # --- Presentational pieces ------------------------------------------------
 
     def render_subtasks(id: str) -> JsxElement {
@@ -334,8 +344,8 @@ def:pub app -> JsxElement {
             <div key={id}>
                 <div className="group flex items-start gap-3 rounded-xl border border-border bg-card p-3.5 shadow-[0_1px_2px_rgba(36,32,27,0.04)] transition-colors hover:border-[color-mix(in_oklab,var(--foreground)_18%,transparent)]">
                     <button
-                        onClick={lambda (e: MouseEvent) { do_complete(id); }}
-                        title="Mark complete"
+                        onClick={lambda (e: MouseEvent) { do_toggle_complete(id, done); }}
+                        title={"Mark not done" if done else "Mark complete"}
                         className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-transform hover:scale-110"
                         style={{"borderColor": color, "background": color if done else "transparent"}}>
                         {done and <HugeiconsIcon icon={Tick02Icon} strokeWidth={3} className="size-3 text-white" />}
@@ -366,9 +376,9 @@ def:pub app -> JsxElement {
                                     <HugeiconsIcon icon={AiMagicIcon} strokeWidth={2} className="size-4" />
                                     {"Hide steps" if is_open else "Steps & breakdown"}
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={lambda { do_complete(id); }}>
+                                <DropdownMenuItem onSelect={lambda { do_toggle_complete(id, done); }}>
                                     <HugeiconsIcon icon={Tick02Icon} strokeWidth={2} className="size-4" />
-                                    Mark complete
+                                    {"Mark not done" if done else "Mark complete"}
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem variant="destructive" onSelect={lambda { do_delete(id); }}>
@@ -380,6 +390,122 @@ def:pub app -> JsxElement {
                     </DropdownMenu>
                 </div>
                 {is_open and render_subtasks(id)}
+            </div>;
+    }
+
+    # --- The week board (horizontal Sunday -> Saturday day progression) ------
+
+    def render_chip(it: Item) -> JsxElement {
+        area = area_for(it.area_key);
+        color = area.color if area is not None else "#ff5c45";
+        done = it.status == Status.DONE or it.status == Status.SKIPPED;
+        id = jid(it);
+        return
+            <button key={id}
+                    onClick={lambda (e: MouseEvent) { do_toggle_complete(id, done); }}
+                    title={it.title + (" (done - click to reopen)" if done else " (click to complete)")}
+                    className="flex w-full items-start gap-1.5 rounded-lg border border-border bg-card px-2 py-1.5 text-left transition-colors hover:border-[color-mix(in_oklab,var(--foreground)_20%,transparent)]">
+                <span className="mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full"
+                      style={{"background": color + "22"}}>
+                    {done and <HugeiconsIcon icon={Tick02Icon} strokeWidth={3} className="size-2.5" style={{"color": color}} />}
+                    {not done and <span className="size-1.5 rounded-full" style={{"background": color}} />}
+                </span>
+                <span className={"text-xs leading-snug " + ("text-muted-foreground line-through" if done else "text-foreground")}>
+                    {it.title}
+                </span>
+            </button>;
+    }
+
+    def render_day_col(b: DayBucket) -> JsxElement {
+        is_today = brief is not None and b.date == brief.generated_at;
+        parts = b.label.split(" ");
+        dow = parts[0] if len(parts) > 0 else b.label;
+        daynum = parts[2] if len(parts) > 2 else "";
+        open_count = len([it for it in b.items if not (it.status == Status.DONE or it.status == Status.SKIPPED)]);
+        return
+            <div key={b.date}
+                 className={"flex min-w-[6rem] flex-1 flex-col rounded-xl border p-2 " + ("border-primary/40 bg-primary/5" if is_today else "border-border bg-secondary/30")}>
+                <div className="mb-2 flex items-baseline justify-between px-1">
+                    <span className={"font-display text-sm " + ("text-primary" if is_today else "text-foreground")}>{dow}</span>
+                    <span className="text-xs text-muted-foreground">{daynum}</span>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                    {len(b.items) == 0 and
+                        <div className="rounded-lg py-3 text-center text-xs text-muted-foreground/50">–</div>}
+                    {[render_chip(it) for it in b.items]}
+                </div>
+                {open_count > 0 and
+                    <div className="mt-2 px-1 text-[0.65rem] text-muted-foreground">{open_count} open · {b.effort_min} min</div>}
+            </div>;
+    }
+
+    def render_week_board -> JsxElement {
+        if brief is None {
+            return <div />;
+        }
+        return
+            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                {[render_day_col(b) for b in brief.week_grid]}
+            </div>;
+    }
+
+    def render_overdue -> JsxElement {
+        if brief is None or len(brief.slipping) == 0 {
+            return <div />;
+        }
+        return
+            <div className="rounded-xl px-3 py-2.5"
+                 style={{"background": "rgba(176,116,29,0.1)", "border": "1px solid rgba(176,116,29,0.22)"}}>
+                <div className="mb-2 flex items-center gap-2 text-sm font-medium" style={{"color": "var(--clay)"}}>
+                    <HugeiconsIcon icon={Alert02Icon} strokeWidth={2} className="size-4" />
+                    Overdue · {len(brief.slipping)}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                    {[
+                        <button key={jid(it)}
+                                onClick={lambda (e: MouseEvent) { do_toggle_complete(jid(it), False); }}
+                                title="Mark complete"
+                                className="flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-foreground transition-colors hover:border-[color-mix(in_oklab,var(--foreground)_20%,transparent)]">
+                            <span className="size-2 shrink-0 rounded-full"
+                                  style={{"background": area_color(it.area_key)}} />
+                            {it.title}
+                            <span className="text-muted-foreground">· {short_date(it.due)}</span>
+                        </button> for it in brief.slipping
+                    ]}
+                </div>
+            </div>;
+    }
+
+    def density_caption -> str {
+        if analytics is None {
+            return "";
+        }
+        for d in analytics.density {
+            if d.date == hovered_density {
+                hrs = round(d.effort_min / 60.0, 1);
+                plural = "s" if d.count != 1 else "";
+                return d.label + "  ·  " + str(d.count) + " item" + plural + "  ·  " + str(hrs) + "h";
+            }
+        }
+        return "";
+    }
+
+    def render_density_bar(d: DensityDay) -> JsxElement {
+        workload = d.effort_min if d.effort_min > 0 else d.count * 30;
+        hpx = int(min(96.0, max(4.0, workload * 0.32)));
+        active = d.date == hovered_density;
+        dim = hovered_density != "" and not active;
+        return
+            <div key={d.date}
+                 className="flex flex-1 cursor-default flex-col items-center justify-end gap-1"
+                 onMouseEnter={lambda { hovered_density = d.date; }}
+                 onMouseLeave={lambda { hovered_density = ""; }}>
+                <div className="w-full rounded-t-md transition-all"
+                     style={{
+                        "height": str(hpx) + "px",
+                        "background": "var(--primary)" if d.count > 0 else "var(--muted)",
+                        "opacity": "0.4" if dim else "1"
+                     }} />
             </div>;
     }
 
@@ -543,17 +669,15 @@ def:pub app -> JsxElement {
 
                 {tab == "briefing" and brief is not None and
                     <div className="space-y-8">
-                        {render_dayplan()}
-                        {render_ask()}
-                        {len(suggestions_list) > 0 and
-                            <div className="grid gap-2 sm:grid-cols-2">
-                                {[
-                                    <div key={s} className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
-                                        <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="mt-0.5 size-4 shrink-0 text-primary" />
-                                        <span className="text-foreground">{s}</span>
-                                    </div> for s in suggestions_list
-                                ]}
-                            </div>}
+                        {render_overdue()}
+                        <section>
+                            <div className="mb-3 flex items-center gap-2.5">
+                                <span className="h-4 w-1 rounded-full bg-primary" />
+                                <h2 className="font-display text-lg text-foreground">Your week</h2>
+                                <span className="ml-auto text-xs text-muted-foreground">Sun – Sat · tap a task to complete</span>
+                            </div>
+                            {render_week_board()}
+                        </section>
                         {len(brief.flags) > 0 and
                             <div className="space-y-2">
                                 {[
@@ -565,32 +689,17 @@ def:pub app -> JsxElement {
                                 ]}
                             </div>
                         }
-                        <section>
-                            {section_title("Today")}
-                            {len(brief.today) == 0 and
-                                <p className="text-sm text-muted-foreground">Nothing due today - enjoy the breathing room.</p>}
-                            <div className="space-y-2.5">{[render_item(it) for it in brief.today]}</div>
-                        </section>
-                        {len(brief.slipping) > 0 and
-                            <section>
-                                {section_title("Slipping")}
-                                <div className="space-y-2.5">{[render_item(it) for it in brief.slipping]}</div>
-                            </section>
-                        }
-                        <section>
-                            {section_title("This week")}
-                            <div className="space-y-5">
+                        {render_dayplan()}
+                        {render_ask()}
+                        {len(suggestions_list) > 0 and
+                            <div className="grid gap-2 sm:grid-cols-2">
                                 {[
-                                    <div key={b.date}>
-                                        <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-                                            <span className="text-sm font-medium text-foreground">{b.label}</span>
-                                            <span>{len(b.items)} items · {b.effort_min} min</span>
-                                        </div>
-                                        <div className="space-y-2.5">{[render_item(it) for it in b.items]}</div>
-                                    </div> for b in brief.week if len(b.items) > 0
+                                    <div key={s} className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
+                                        <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="mt-0.5 size-4 shrink-0 text-primary" />
+                                        <span className="text-foreground">{s}</span>
+                                    </div> for s in suggestions_list
                                 ]}
-                            </div>
-                        </section>
+                            </div>}
                     </div>
                 }
 
@@ -669,6 +778,15 @@ def:pub app -> JsxElement {
                                     <p className="text-[0.95rem] leading-relaxed" style={{"color": "var(--ink-fg)"}}>{outlook.summary}</p>
                                     {outlook.busiest_day and
                                         <p className="ink-muted text-sm">Busiest day: {outlook.busiest_day}</p>}
+                                    {len(outlook.highlights) > 0 and
+                                        <div className="space-y-1.5 border-t pt-3" style={{"borderColor": "rgba(255,255,255,0.08)"}}>
+                                            {[
+                                                <div key={h} className="flex items-start gap-2 text-sm" style={{"color": "var(--ink-fg)"}}>
+                                                    <span className="mt-1.5 size-1.5 shrink-0 rounded-full" style={{"background": "var(--primary)"}} />
+                                                    <span>{h}</span>
+                                                </div> for h in outlook.highlights
+                                            ]}
+                                        </div>}
                                     {[
                                         <p key={r} className="flex items-center gap-1.5 text-sm" style={{"color": "#ffb3a6"}}>
                                             <HugeiconsIcon icon={Alert02Icon} strokeWidth={2} className="size-3.5" />{r}
@@ -709,17 +827,16 @@ def:pub app -> JsxElement {
 
                         <section>
                             {section_title("Next 14 days")}
-                            <div className="flex items-end gap-1.5 rounded-2xl border border-border bg-card p-4" style={{"height": "112px"}}>
-                                {[
-                                    <div key={d.date} className="flex flex-1 flex-col items-center justify-end gap-1"
-                                         title={d.label + ": " + str(d.count)}>
-                                        <div className="w-full rounded-t-md transition-all"
-                                             style={{
-                                                "height": str(max(4, d.count * 16)) + "px",
-                                                "background": "var(--primary)" if d.count > 0 else "var(--muted)"
-                                             }} />
-                                    </div> for d in analytics.density
-                                ]}
+                            <div className="rounded-2xl border border-border bg-card p-4">
+                                <div className="mb-3 h-5 text-xs">
+                                    {hovered_density == "" and
+                                        <span className="text-muted-foreground">Hover a day to see its workload.</span>}
+                                    {hovered_density != "" and
+                                        <span className="font-medium text-foreground">{density_caption()}</span>}
+                                </div>
+                                <div className="flex items-end gap-1.5" style={{"height": "96px"}}>
+                                    {[render_density_bar(d) for d in analytics.density]}
+                                </div>
                             </div>
                         </section>
                     </div>
