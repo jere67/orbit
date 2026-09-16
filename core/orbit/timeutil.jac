@@ -17,6 +17,12 @@ def now_iso -> str {
 }
 
 
+def iso_in(seconds: int) -> str {
+    # An ISO timestamp `seconds` from now (comparable lexicographically to now_iso).
+    return (now_dt() + datetime.timedelta(seconds=seconds)).replace(microsecond=0).isoformat();
+}
+
+
 def today_str -> str {
     return now_dt().date().isoformat();
 }

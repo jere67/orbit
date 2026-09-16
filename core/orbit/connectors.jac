@@ -13,12 +13,22 @@ import os;
 import json;
 import hashlib;
 import urllib.request;
+import urllib.parse;
 
 import from .config { env, has_env, ai_enabled }
 import from .llm { orbit_llm }
 import from .items { add_item, item_by_external, list_items }
-import from .timeutil { today_str, date_of, add_days }
+import from .timeutil { today_str, date_of, add_days, now_iso, iso_in }
 import from .model { ConnectorStatus, SyncResult }
+
+
+# Persisted Slack auth, so a rotating refresh token (which is single-use and
+# changes on every refresh) survives restarts. Never crosses to the client.
+node SlackToken {
+    has access_token: str = "",
+        refresh_token: str = "",
+        expires_at: str = "";
+}
 
 
 obj ExternalItem {
@@ -322,11 +332,85 @@ def _actions_from(messages: list[str]) -> list[str] {
 }
 
 
+"""The persisted Slack auth node under root (created once)."""
+def _slack_state -> SlackToken {
+    existing = [root-->][?:SlackToken];
+    if existing {
+        return existing[0];
+    }
+    return root ++> SlackToken();
+}
+
+
+"""Exchange a rotating refresh token for a fresh access token (Slack OAuth v2,
+form-encoded). Returns the parsed JSON response."""
+def _slack_refresh(client_id: str, client_secret: str, refresh: str) -> dict {
+    form = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh,
+        "client_id": client_id,
+        "client_secret": client_secret
+    };
+    body = urllib.parse.urlencode(form).encode("utf-8");
+    req = urllib.request.Request(
+        "https://slack.com/api/oauth.v2.access",
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST"
+    );
+    with urllib.request.urlopen(req, timeout=20) as r {
+        return json.loads(r.read().decode("utf-8"));
+    }
+}
+
+
+"""The Slack access token to use now.
+
+Static-token setups (SLACK_TOKEN with no client id/secret) are returned as-is.
+When token rotation is configured (client id + secret + an initial
+SLACK_REFRESH_TOKEN), this caches the short-lived access token in the graph and
+refreshes it - rotating and persisting the new refresh token - when it expires.
+"""
+def _slack_access_token -> str {
+    static_token = env("SLACK_TOKEN");
+    client_id = env("SLACK_CLIENT_ID");
+    client_secret = env("SLACK_CLIENT_SECRET");
+    if not (client_id and client_secret) {
+        return static_token;
+    }
+    st = _slack_state();
+    if st.access_token and st.expires_at and st.expires_at > now_iso() {
+        return st.access_token;
+    }
+    refresh = st.refresh_token or env("SLACK_REFRESH_TOKEN");
+    if not refresh {
+        return static_token;
+    }
+    try {
+        resp = _slack_refresh(client_id, client_secret, refresh);
+    } except Exception as e {
+        _ = e;
+        return st.access_token or static_token;
+    }
+    if not resp.get("ok") {
+        return st.access_token or static_token;
+    }
+    st.access_token = resp.get("access_token") or "";
+    st.refresh_token = resp.get("refresh_token") or refresh;
+    ttl = resp.get("expires_in") or 43200;
+    st.expires_at = iso_in(int(ttl) - 120);
+    return st.access_token;
+}
+
+
 """Read recent messages from the configured Slack channels and extract tasks."""
 def fetch_slack -> list[ExternalItem] {
-    token = env("SLACK_TOKEN");
     channels = env("SLACK_CHANNELS");
-    if not token or not channels {
+    if not channels {
+        return [];
+    }
+    token = _slack_access_token();
+    if not token {
         return [];
     }
     area = env("ORBIT_SLACK_AREA", "research");
@@ -359,7 +443,7 @@ def:pub connector_status -> list[ConnectorStatus] {
     return [
         ConnectorStatus(name="calendar", label="Google Calendar", configured=(has_env("ORBIT_CAL_ICS_URL") or has_env("ORBIT_CAL_ICS_URLS"))),
         ConnectorStatus(name="notion", label="Notion", configured=(has_env("NOTION_TOKEN") and (has_env("NOTION_DB_ID") or has_env("NOTION_PAGE_ID")))),
-        ConnectorStatus(name="slack", label="Slack", configured=(has_env("SLACK_TOKEN") and has_env("SLACK_CHANNELS")))
+        ConnectorStatus(name="slack", label="Slack", configured=(has_env("SLACK_CHANNELS") and (has_env("SLACK_TOKEN") or (has_env("SLACK_CLIENT_ID") and has_env("SLACK_CLIENT_SECRET") and has_env("SLACK_REFRESH_TOKEN")))))
     ];
 }
 
