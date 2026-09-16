@@ -11,7 +11,7 @@ import from .config { ai_enabled }
 import from .briefing { Briefing, get_briefing, plain_headline }
 import from .items { add_item, add_subtask, item_by_id }
 import from .areas { list_areas, area_exists, add_area }
-import from .timeutil { today_str, add_days, weekday_of }
+import from .timeutil { today_str, add_days, weekday_of, pretty_date }
 
 glob WEEKDAY_NAMES: dict[str, int] = {
     "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
@@ -40,8 +40,8 @@ def narrate(summary: str) -> str by orbit_llm();
 sem narrate = "Write a warm, concise one-to-two sentence daily briefing for a busy student, given a compact summary of their agenda. Be specific and encouraging, never list every item.";
 
 
-def parse_items(text: str, area_keys: list[str], today: str) -> list[ParsedItem] by orbit_llm();
-sem parse_items = "Turn a natural-language note into one or more planning items, inferring the area, kind, due date, priority, and any weekly recurrence.";
+def parse_items(text: str, area_keys: list[str], today: str, date_context: str) -> list[ParsedItem] by orbit_llm();
+sem parse_items = "Turn a natural-language note into one or more planning items, inferring the area, kind, due date, priority, and any weekly recurrence. Resolve every relative or weekday date strictly from date_context, which gives today's date and the exact ISO date of each upcoming weekday - never guess or compute a date yourself, map it from date_context.";
 
 
 def breakdown(title: str) -> list[str] by orbit_llm();
@@ -157,6 +157,20 @@ def _fallback_parse(text: str, today: str) -> list[ParsedItem] {
 }
 
 
+"""A plain-text map of today and the next week of dates, so the model resolves
+weekdays/relative dates by lookup instead of (unreliable) arithmetic."""
+def _date_context(today: str) -> str {
+    lines = ["Today is " + pretty_date(today) + " (" + today + ")."];
+    i = 1;
+    while i <= 8 {
+        d = add_days(today, i);
+        lines.append(pretty_date(d) + " = " + d);
+        i += 1;
+    }
+    return "\n".join(lines);
+}
+
+
 """Parse natural language into items and create them. Always creates at least
 one item; proposes and creates a new area when the model suggests one."""
 def:pub capture(text: str) -> list[Item] {
@@ -165,13 +179,21 @@ def:pub capture(text: str) -> list[Item] {
     parsed = [];
     if ai_enabled() {
         try {
-            parsed = parse_items(text, keys, today);
+            parsed = parse_items(text, keys, today, _date_context(today));
         } except Exception {
             parsed = [];
         }
     }
     if not parsed {
         parsed = _fallback_parse(text, today);
+    }
+    # The model is unreliable at date math, so when the note has a single, clear
+    # day cue, resolve the due date deterministically (always correct vs today).
+    if len(parsed) == 1 {
+        det = _scan_due(text, today);
+        if det {
+            parsed[0].due = det;
+        }
     }
     created = [];
     for p in parsed {

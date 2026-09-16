@@ -269,7 +269,7 @@ def tool_upcoming(days: int) -> str {
 
 
 def ask_agent(question: str, today: str) -> str by orbit_llm(tools=[tool_today, tool_area, tool_upcoming]);
-sem ask_agent = "You are Orbit, the user's personal planning assistant. Answer their question using the tools to look up their actual items before responding. Be concise, specific, and helpful - reference real items and dates. If they ask what to do, recommend an order.";
+sem ask_agent = "You are Orbit, the user's personal planning assistant. Answer their question using the tools to look up their actual items before responding. Be concise, specific, and helpful - reference real items and dates. If they ask what to do, recommend an order. Format your reply in Markdown: a short lead sentence, then a numbered or bulleted list with each item's title in **bold** followed by its date, and put each list item on its own line.";
 
 
 """Answer a free-form question about the user's plans, using live tools."""
