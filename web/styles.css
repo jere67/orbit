@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+:root {
+    --bg: #0b0e14;
+    --surface: #141925;
+    --surface-2: #1c2230;
+    --border: #2a3244;
+    --text: #e6e9ef;
+    --muted: #94a1b8;
+    --accent: #6366f1;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+button {
+    font-family: inherit;
+    cursor: pointer;
+}
+
+input, textarea, select {
+    font-family: inherit;
+}
+
+::placeholder {
+    color: var(--muted);
+}
