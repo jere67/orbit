@@ -5,7 +5,7 @@ and falls back to deterministic logic, so Orbit is fully functional with no
 model installed and no API key. The default model is set in jac.toml.
 """
 
-import from .model { Item, Subtask }
+import from .model { Item, Subtask, ItemKind }
 import from .llm { orbit_llm }
 import from .config { ai_enabled }
 import from .briefing { Briefing, get_briefing, plain_headline }
@@ -114,19 +114,46 @@ def _guess_due(phrase: str, today: str) -> str {
 }
 
 
-"""Rule-based fallback parser for 'TITLE by WHEN' when no model is available."""
+"""Scan free text for a day cue anywhere in it (today/tomorrow/tonight/weekday),
+returning the first ISO date found, or "". This is what lets a capture like
+'gym tomorrow' land on the right day in the briefing without an AI model."""
+def _scan_due(text: str, today: str) -> str {
+    words = text.lower().replace(",", " ").replace(".", " ").split();
+    if "tonight" in words {
+        return today;
+    }
+    for w in words {
+        g = _guess_due(w, today);
+        if g {
+            return g;
+        }
+    }
+    return "";
+}
+
+
+"""Rule-based fallback parser when no model is available. Reads an explicit
+'TITLE by WHEN', else infers a day cue from anywhere in the text; with no cue
+the item has no due date and simply backlogs to the agenda."""
 def _fallback_parse(text: str, today: str) -> list[ParsedItem] {
     body = text.strip();
     if not body {
         return [];
     }
+    title = body;
+    due = "";
     if " by " in body.lower() {
         cut = body.lower().rfind(" by ");
-        title = body[:cut].strip();
-        due = _guess_due(body[cut + 4:], today);
-        return [ParsedItem(title=title, due=due)];
+        guess = _guess_due(body[cut + 4:], today);
+        if guess {
+            title = body[:cut].strip();
+            due = guess;
+        }
     }
-    return [ParsedItem(title=body)];
+    if not due {
+        due = _scan_due(body, today);
+    }
+    return [ParsedItem(title=title, due=due)];
 }
 
 
@@ -174,7 +201,21 @@ def:pub capture(text: str) -> list[Item] {
 }
 
 
-"""Generate subtasks for an item via AI and attach them. Empty on failure."""
+"""A sensible deterministic breakdown when no model is available, shaped by the
+item's kind so it is not one-size-fits-all."""
+def _fallback_breakdown(it: Item) -> list[str] {
+    if it.kind == ItemKind.DEADLINE {
+        return ["Outline what's required", "Draft a first version", "Revise and tighten it up", "Submit before the deadline"];
+    }
+    if it.kind == ItemKind.EVENT or it.kind == ItemKind.SESSION {
+        return ["Gather what you'll need", "Block the time to focus", "Do the work", "Capture any follow-ups"];
+    }
+    return ["Clarify the goal and scope", "Break off a first 25-minute chunk", "Do the main work", "Review and wrap up"];
+}
+
+
+"""Generate subtasks for an item and attach them. Uses AI when available and
+falls back to a deterministic, kind-aware breakdown so the button always works."""
 def:pub breakdown_item(id: str) -> list[Subtask] {
     it = item_by_id(id);
     if it is None {
@@ -187,6 +228,10 @@ def:pub breakdown_item(id: str) -> list[Subtask] {
         } except Exception {
             titles = [];
         }
+    }
+    cleaned = [t for t in titles if t.strip()];
+    if not cleaned {
+        titles = _fallback_breakdown(it);
     }
     subs = [];
     for t in titles {

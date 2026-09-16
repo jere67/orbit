@@ -91,6 +91,7 @@ obj Briefing {
         headline: str = "",
         today: list[Item] = [],
         week: list[DayBucket] = [],
+        week_grid: list[DayBucket] = [],
         slipping: list[Item] = [],
         flags: list[str] = [];
 }
@@ -115,7 +116,8 @@ obj CompletionStats {
 obj DensityDay {
     has date: str,
         label: str,
-        count: int = 0;
+        count: int = 0,
+        effort_min: int = 0;
 }
 
 obj Streaks {
@@ -148,6 +150,7 @@ obj DayPlan {
 obj WeekOutlook {
     has summary: str = "",
         busiest_day: str = "",
+        highlights: list[str] = [],
         risks: list[str] = [],
         suggestion: str = "";
 }

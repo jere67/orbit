@@ -7,7 +7,7 @@ Layer 1 (here) is pure logic and always on. The AI narration headline in
 import from .model { Item, Status, DayBucket, Briefing }
 import from .items { list_items }
 import from .scoring { is_open, urgency, rank }
-import from .timeutil { today_str, date_of, add_days, pretty_date }
+import from .timeutil { today_str, date_of, add_days, pretty_date, sunday_of }
 
 
 """Open items due today (overdue items live in the Slipping section instead)."""
@@ -40,6 +40,32 @@ def _week_buckets(items: list[Item]) -> list[DayBucket] {
         }
         buckets.append(
             DayBucket(date=d, label=pretty_date(d), items=day_items, effort_min=effort)
+        );
+        day += 1;
+    }
+    return buckets;
+}
+
+
+"""The current calendar week, Sunday through Saturday.
+
+Each day holds its open items (ranked) followed by that day's completed items,
+so the board reads as progress through the week. Effort counts open work only.
+"""
+def _week_grid(items: list[Item]) -> list[DayBucket] {
+    start = sunday_of(today_str());
+    buckets = [];
+    day = 0;
+    while day < 7 {
+        d = add_days(start, day);
+        open_items = rank([it for it in items if is_open(it) and date_of(it.due) == d]);
+        done_items = [it for it in items if it.status == Status.DONE and date_of(it.due) == d];
+        effort = 0;
+        for it in open_items {
+            effort += it.effort_min;
+        }
+        buckets.append(
+            DayBucket(date=d, label=pretty_date(d), items=open_items + done_items, effort_min=effort)
         );
         day += 1;
     }
@@ -101,6 +127,7 @@ def:pub get_briefing -> Briefing {
     brief = Briefing(generated_at=today_str());
     brief.today = _today_items(items);
     brief.week = _week_buckets(items);
+    brief.week_grid = _week_grid(items);
     brief.slipping = _slipping(items);
     brief.flags = _flags(brief.week);
     brief.headline = plain_headline(brief);

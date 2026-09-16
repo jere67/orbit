@@ -79,8 +79,12 @@ def _density(items: list[Item]) -> list[DensityDay] {
     day = 0;
     while day < 14 {
         d = add_days(base, day);
-        count = len([it for it in items if is_open(it) and date_of(it.due) == d]);
-        out.append(DensityDay(date=d, label=pretty_date(d), count=count));
+        due_today = [it for it in items if is_open(it) and date_of(it.due) == d];
+        effort = 0;
+        for it in due_today {
+            effort += it.effort_min;
+        }
+        out.append(DensityDay(date=d, label=pretty_date(d), count=len(due_today), effort_min=effort));
         day += 1;
     }
     return out;

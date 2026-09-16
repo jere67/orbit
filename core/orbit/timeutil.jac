@@ -95,3 +95,11 @@ def pretty_date(iso_date: str) -> str {
     d = datetime.date.fromisoformat(iso_date);
     return d.strftime("%a %b %d");
 }
+
+
+def sunday_of(iso: str) -> str {
+    # The Sunday on or before the given date, as "YYYY-MM-DD".
+    # weekday_of is Monday=0..Sunday=6; a Sunday-start week wants Sunday at 0.
+    offset = (weekday_of(iso) + 1) % 7;
+    return add_days(date_of(iso), -offset);
+}

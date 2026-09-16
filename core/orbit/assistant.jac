@@ -87,7 +87,7 @@ def:pub day_at_a_glance -> DayPlan {
 # --- Weekly overview ----------------------------------------------------------
 
 def outlook_week(summary: str) -> WeekOutlook by orbit_llm();
-sem outlook_week = "Given a summary of a student's week, write a short outlook: a two-sentence summary of the shape of the week, the busiest day, up to three concrete risks, and one actionable suggestion. Be specific and practical.";
+sem outlook_week = "Given a summary of a student's week, write a short outlook: a two-sentence summary of the shape of the week, the busiest day, a per-area highlights bullet list (one line per active area, like 'Research: 3 items, ~3.5h - top: Reproduce baseline results'), up to three concrete risks, and one actionable suggestion. Be specific and practical.";
 
 
 """A compact per-day text view of the week ahead."""
@@ -105,36 +105,81 @@ def _week_summary -> str {
 }
 
 
-"""An AI outlook on the week, falling back to a computed one."""
+"""A descriptive, per-area outlook computed straight from the week's items
+(no model). Groups the next 7 days by area with counts, hours, and a headline
+item, so it reads like a real weekly brief rather than a one-liner."""
+def _computed_outlook -> WeekOutlook {
+    brief = get_briefing();
+    labels = {a.key: a.label for a in list_areas()};
+    per_area = {};
+    total_items = 0;
+    total_effort = 0;
+    busiest = "";
+    busiest_effort = -1;
+    for b in brief.week {
+        total_items += len(b.items);
+        total_effort += b.effort_min;
+        if b.effort_min > busiest_effort {
+            busiest_effort = b.effort_min;
+            busiest = b.label;
+        }
+        for it in b.items {
+            if it.area_key not in per_area {
+                per_area[it.area_key] = [0, 0, ""];
+            }
+            row = per_area[it.area_key];
+            row[0] += 1;
+            row[1] += it.effort_min;
+            if not row[2] {
+                row[2] = it.title;
+            }
+        }
+    }
+    ordered = sorted(per_area.items(), key=lambda (kv: any) -> int { return kv[1][1]; }, reverse=True);
+    highlights = [];
+    for (akey, row) in ordered {
+        lbl = labels[akey] if akey in labels else akey;
+        hrs = round(row[1] / 60.0, 1);
+        plural = "s" if row[0] != 1 else "";
+        line = lbl + ": " + str(row[0]) + " item" + plural + ", ~" + str(hrs) + "h";
+        if row[2] {
+            line = line + " - top: " + row[2];
+        }
+        highlights.append(line);
+    }
+    if total_items == 0 {
+        return WeekOutlook(
+            summary="A quiet week - nothing scheduled across your areas yet.",
+            suggestion="Capture what's coming up so Orbit can plan it."
+        );
+    }
+    total_hrs = round(total_effort / 60.0, 1);
+    return WeekOutlook(
+        summary=str(total_items) + " items across " + str(len(per_area)) + " areas this week, about " + str(total_hrs) + "h of work.",
+        busiest_day=busiest,
+        highlights=highlights,
+        risks=brief.flags[:3],
+        suggestion="Protect focus time on " + busiest + "." if busiest else "Add a few time blocks to stay ahead."
+    );
+}
+
+
+"""An AI outlook on the week, falling back to a computed per-area one."""
 def:pub weekly_overview -> WeekOutlook {
     if ai_enabled() {
         try {
             outlook = outlook_week(_week_summary());
             if outlook.summary.strip() {
+                if not outlook.highlights {
+                    outlook.highlights = _computed_outlook().highlights;
+                }
                 return outlook;
             }
         } except Exception as e {
             _ = e;
         }
     }
-    brief = get_briefing();
-    total = 0;
-    busiest = "";
-    busiest_effort = -1;
-    for b in brief.week {
-        total += len(b.items);
-        if b.effort_min > busiest_effort {
-            busiest_effort = b.effort_min;
-            busiest = b.label;
-        }
-    }
-    outlook = WeekOutlook(
-        summary=str(total) + " items across the next 7 days.",
-        busiest_day=busiest,
-        risks=brief.flags[:3],
-        suggestion="Protect focus time on " + busiest + "." if busiest else "Add a few time blocks to stay ahead."
-    );
-    return outlook;
+    return _computed_outlook();
 }
 
 
