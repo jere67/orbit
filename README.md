@@ -84,9 +84,9 @@ From the repository root:
 jac run
 ```
 
-Open **http://localhost:8000**. On first run the graph is empty - open the
-**Agenda** tab and click **"Load a sample week"** to populate a realistic demo,
-or just start capturing your own items in the bar at the top.
+Open **http://localhost:8000**. On first run the graph is empty - start
+capturing your own items in the bar at the top, or connect your Google Calendar
+and Notion (see below) and click **Sync now** to pull in your real schedule.
 
 The four tabs:
 

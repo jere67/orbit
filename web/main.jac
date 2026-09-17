@@ -47,7 +47,6 @@ import from core.orbit.assistant {
 }
 import from core.orbit.connectors { connector_status, sync_connectors, preview_connectors }
 import from core.orbit.config { ai_status }
-import from core.orbit.demo { seed_demo }
 import from core.orbit.model { Item, Area, Priority, Status, ItemKind, Briefing, Analytics, DayPlan, WeekOutlook, DayBucket, DensityDay, ConnectorPreview }
 
 
@@ -300,14 +299,6 @@ def:pub app -> JsxElement {
     async def do_unarchive_area(key: str) {
         await archive_area(key=key, archived=False);
         await reload();
-    }
-
-    async def do_seed {
-        busy = True;
-        await seed_demo();
-        busy = False;
-        await reload();
-        await load_ai();
     }
 
     def area_for(key: str) -> Area | None {
@@ -933,8 +924,8 @@ def:pub app -> JsxElement {
                                     <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
                                         <HugeiconsIcon icon={InboxIcon} strokeWidth={2} className="size-6" />
                                     </span>
-                                    <p className="text-sm text-muted-foreground">Your agenda is empty.</p>
-                                    <Button onClick={lambda (e: MouseEvent) { do_seed(); }}>Load a sample week</Button>
+                                    <p className="text-sm text-muted-foreground">Your agenda is empty. Capture something above, or pull in your Calendar and Notion.</p>
+                                    <Button onClick={lambda (e: MouseEvent) { do_sync(); }} disabled={syncing}>{"Syncing..." if syncing else "Sync now"}</Button>
                                 </div>}
                             {len(items) > 0 and len(agenda_items()) == 0 and
                                 <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No items match these filters.</p>}
