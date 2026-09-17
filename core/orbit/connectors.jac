@@ -19,7 +19,7 @@ import from .config { env, has_env, ai_status }
 import from .llm { orbit_llm }
 import from .items { add_item, item_by_external, list_items }
 import from .areas { list_areas }
-import from .timeutil { today_str, date_of, add_days, days_between }
+import from .timeutil { today_str, date_of, add_days, days_between, sunday_of }
 import from .model { ConnectorStatus, SyncResult, PreviewItem, ConnectorPreview }
 
 
@@ -228,8 +228,10 @@ def _ics_sources -> list[dict[str, str]] {
 
 """Parse the upcoming VEVENTs out of one ICS feed, each tagged with `area`."""
 def _parse_ics(text: str, area: str) -> list[ExternalItem] {
-    today = today_str();
-    horizon = add_days(today, 30);
+    # Start at the current week's Sunday, not today, so the "Your week" board is
+    # complete: days already passed this week still show what was scheduled.
+    start = sunday_of(today_str());
+    horizon = add_days(today_str(), 30);
     out = [];
     cur = {};
     in_event = False;
@@ -241,7 +243,7 @@ def _parse_ics(text: str, area: str) -> list[ExternalItem] {
             if "SUMMARY" in cur {
                 due = _ics_date(cur["DTSTART"]) if "DTSTART" in cur else "";
                 d = date_of(due);
-                if (not d) or (d >= today and d <= horizon) {
+                if (not d) or (d >= start and d <= horizon) {
                     uid = cur["UID"] if "UID" in cur else _hash_id(cur["SUMMARY"] + due);
                     out.append(
                         ExternalItem(

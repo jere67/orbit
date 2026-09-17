@@ -4,7 +4,7 @@ Layer 1 (here) is pure logic and always on. The AI narration headline in
 `ai.jac` layers on top and degrades to `plain_headline` when no model is present.
 """
 
-import from .model { Item, Status, DayBucket, Briefing }
+import from .model { Item, DayBucket, Briefing }
 import from .items { list_items }
 import from .scoring { is_open, urgency, rank }
 import from .timeutil { today_str, date_of, add_days, pretty_date, sunday_of }
@@ -58,14 +58,17 @@ def _week_grid(items: list[Item]) -> list[DayBucket] {
     day = 0;
     while day < 7 {
         d = add_days(start, day);
-        open_items = rank([it for it in items if is_open(it) and date_of(it.due) == d]);
-        done_items = [it for it in items if it.status == Status.DONE and date_of(it.due) == d];
+        day_items = [it for it in items if it.due and date_of(it.due) == d];
+        open_items = rank([it for it in day_items if is_open(it)]);
+        # Everything else on the day is settled - completed, skipped, or a
+        # scheduled event that has already passed - and reads as progress.
+        settled = [it for it in day_items if not is_open(it)];
         effort = 0;
         for it in open_items {
             effort += it.effort_min;
         }
         buckets.append(
-            DayBucket(date=d, label=pretty_date(d), items=open_items + done_items, effort_min=effort)
+            DayBucket(date=d, label=pretty_date(d), items=open_items + settled, effort_min=effort)
         );
         day += 1;
     }

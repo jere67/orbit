@@ -446,9 +446,20 @@ def:pub app -> JsxElement {
 
     # --- The week board (horizontal Sunday -> Saturday day progression) ------
 
+    """True when a week-board item reads as done: completed/skipped, or a
+    scheduled event/session whose day has already passed."""
+    def is_settled(it: Item) -> bool {
+        if it.status == Status.DONE or it.status == Status.SKIPPED {
+            return True;
+        }
+        is_scheduled = it.kind == ItemKind.EVENT or it.kind == ItemKind.SESSION;
+        today = brief.generated_at if brief is not None else "";
+        return is_scheduled and it.due != "" and it.due[:10] < today;
+    }
+
     def render_chip(it: Item) -> JsxElement {
         color = area_color(it.area_key);
-        done = it.status == Status.DONE or it.status == Status.SKIPPED;
+        done = is_settled(it);
         id = jid(it);
         return
             <button key={id}
@@ -470,7 +481,7 @@ def:pub app -> JsxElement {
         parts = b.label.split(" ");
         dow = parts[0] if len(parts) > 0 else b.label;
         daynum = parts[2] if len(parts) > 2 else "";
-        open_count = len([it for it in b.items if not (it.status == Status.DONE or it.status == Status.SKIPPED)]);
+        open_count = len([it for it in b.items if not is_settled(it)]);
         return
             <div key={b.date}
                  className={"flex min-w-[8.5rem] flex-1 flex-col rounded-xl px-1 pt-1 pb-2 " + ("bg-primary/[0.06]" if is_today else "")}>
