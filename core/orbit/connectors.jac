@@ -17,7 +17,7 @@ import urllib.request;
 
 import from .config { env, has_env, ai_status }
 import from .llm { orbit_llm }
-import from .items { add_item, item_by_external, list_items }
+import from .items { add_item, item_by_external, list_items, is_real_title }
 import from .areas { list_areas }
 import from .timeutil { today_str, date_of, add_days, days_between, sunday_of }
 import from .model { ConnectorStatus, SyncResult, PreviewItem, ConnectorPreview }
@@ -239,7 +239,7 @@ def _parse_ics(text: str, area: str) -> list[ExternalItem] {
             in_event = True;
             cur = {};
         } elif ln == "END:VEVENT" {
-            if "SUMMARY" in cur {
+            if "SUMMARY" in cur and is_real_title(cur["SUMMARY"]) {
                 due = _ics_date(cur["DTSTART"]) if "DTSTART" in cur else "";
                 d = date_of(due);
                 if (not d) or (d >= start and d <= horizon) {

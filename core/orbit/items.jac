@@ -128,10 +128,22 @@ def item_by_external(source: str, external_id: str) -> Item | None {
 }
 
 
-"""Every item, newest first."""
+"""False for placeholder titles - empty, whitespace, or only punctuation like
+'...' / '-' - so junk items never surface in any view."""
+def is_real_title(title: str) -> bool {
+    t = title.strip();
+    if not t {
+        return False;
+    }
+    junk = t.replace(".", "").replace("-", "").replace("·", "").replace("…", "").strip();
+    return bool(junk);
+}
+
+
+"""Every item with a real title, newest first."""
 def:pub list_items -> list[Item] {
     ensure_seed();
-    items = [root-->][?:Item];
+    items = [it for it in [root-->][?:Item] if is_real_title(it.title)];
     return sorted(items, key=lambda (it: Item) -> str { return it.created_at; }, reverse=True);
 }
 
