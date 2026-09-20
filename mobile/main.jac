@@ -264,8 +264,14 @@ def:pub app -> JsxElement {
         dayplan_busy = False;
     }
 
+    async def auto_sync {
+        await sync_connectors();
+        await reload();
+    }
+
     async can with entry {
         await reload();
+        await auto_sync();
         await load_ai();
     }
 
@@ -396,7 +402,8 @@ def:pub app -> JsxElement {
     }
 
     def agenda_items -> list {
-        return sorted(items, key=lambda (it: Item) -> str { return it.due if it.due else "9999-99-99"; });
+        tasks = [it for it in items if it.source != "calendar"];
+        return sorted(tasks, key=lambda (it: Item) -> str { return it.due if it.due else "9999-99-99"; });
     }
 
     def density_height(count: int, effort: int) -> int {
@@ -462,7 +469,7 @@ def:pub app -> JsxElement {
                                     <Text style={styles["focusWhy"]}>{f.why}</Text>
                                 </View>
                             </View>
-                            for f in (dayplan.focus if dayplan is not None else [])
+                            for f in (dayplan.focus if dayplan is not None else []) if f.title.strip() not in ["", "...", "…", "-", "--"]
                         ]}
                     </View>
                     {(<View style={styles["watchOut"]}>

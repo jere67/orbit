@@ -139,8 +139,14 @@ def:pub app -> JsxElement {
         dayplan_busy = False;
     }
 
+    async def auto_sync {
+        await sync_connectors();
+        await reload();
+    }
+
     async can with entry {
         await reload();
+        await auto_sync();
         await load_ai();
     }
 
@@ -315,10 +321,15 @@ def:pub app -> JsxElement {
         return a.color if a is not None else "#ff5c45";
     }
 
-    """Items for the Agenda tab: filtered by the active area/priority, sorted by due date (soonest first, undated last)."""
+    """Items for the Agenda tab: the tasks you're actually working on (Notion +
+    manual), never raw calendar events - filtered by the active area/priority and
+    sorted by due date (soonest first, undated last)."""
     def agenda_items -> list {
         rows = [];
         for it in items {
+            if it.source == "calendar" {
+                continue;
+            }
             if filter_area != "all" and it.area_key != filter_area {
                 continue;
             }
@@ -601,7 +612,7 @@ def:pub app -> JsxElement {
                                         <div className="text-[0.95rem] font-medium" style={{"color": "var(--ink-fg)"}}>{f.title}</div>
                                         <div className="ink-muted text-sm">{f.why}</div>
                                     </div>
-                                </div> for f in dayplan.focus
+                                </div> for f in dayplan.focus if f.title.strip() not in ["", "...", "…", "-", "--"]
                             ]}
                         </div>
                         {dayplan.watch_out and
