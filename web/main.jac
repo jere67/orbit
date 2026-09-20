@@ -40,7 +40,7 @@ import from core.orbit.items {
     list_subtasks, add_subtask, toggle_subtask
 }
 import from core.orbit.areas { list_areas, add_area, archive_area, update_area }
-import from core.orbit.ai { capture, breakdown_item, fast_briefing }
+import from core.orbit.ai { capture, breakdown_item, fast_briefing, smart_briefing }
 import from core.orbit.analytics { get_analytics }
 import from core.orbit.assistant {
     quick_dayplan, day_at_a_glance, quick_suggestions, suggestions, weekly_overview, ask
