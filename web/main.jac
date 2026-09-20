@@ -330,7 +330,6 @@ def:pub app -> JsxElement {
         return sorted(rows, key=lambda (it: Item) -> str { return it.due if it.due else "9999-99-99"; });
     }
 
-    # --- Presentational pieces ------------------------------------------------
 
     def render_subtasks(id: str) -> JsxElement {
         my_subs = expanded_subs;
@@ -444,7 +443,6 @@ def:pub app -> JsxElement {
             </div>;
     }
 
-    # --- The week board (horizontal Sunday -> Saturday day progression) ------
 
     """True when a week-board item reads as done: completed/skipped, or a
     scheduled event/session whose day has already passed."""
@@ -770,7 +768,6 @@ def:pub app -> JsxElement {
             </button>;
     }
 
-    # --- Layout ---------------------------------------------------------------
 
     return
         <div className="flex h-[100dvh] flex-col md:h-auto md:min-h-screen md:flex-row">

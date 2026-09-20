@@ -60,8 +60,6 @@ def _week_grid(items: list[Item]) -> list[DayBucket] {
         d = add_days(start, day);
         day_items = [it for it in items if it.due and date_of(it.due) == d];
         open_items = rank([it for it in day_items if is_open(it)]);
-        # Everything else on the day is settled - completed, skipped, or a
-        # scheduled event that has already passed - and reads as progress.
         settled = [it for it in day_items if not is_open(it)];
         effort = 0;
         for it in open_items {

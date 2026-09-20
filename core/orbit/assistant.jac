@@ -19,8 +19,6 @@ import from .briefing { get_briefing }
 import from .timeutil { today_str, date_of, add_days, days_between, pretty_date }
 
 
-# --- Day at a glance ----------------------------------------------------------
-
 sem FocusBlock.when = "A rough time-of-day hint like 'Morning' or 'After lunch'";
 sem FocusBlock.why = "One short clause on why this is the priority";
 
@@ -83,8 +81,6 @@ def:pub day_at_a_glance -> DayPlan {
     return quick_dayplan();
 }
 
-
-# --- Weekly overview ----------------------------------------------------------
 
 def outlook_week(summary: str) -> WeekOutlook by orbit_llm();
 sem outlook_week = "Given a summary of a student's week, write a short outlook: a two-sentence summary of the shape of the week, the busiest day, a per-area highlights bullet list (one line per active area, like 'Research: 3 items, ~3.5h - top: Reproduce baseline results'), up to three concrete risks, and one actionable suggestion. Be specific and practical.";
@@ -183,8 +179,6 @@ def:pub weekly_overview -> WeekOutlook {
 }
 
 
-# --- Proactive suggestions ----------------------------------------------------
-
 def suggest_moves(summary: str) -> list[str] by orbit_llm();
 sem suggest_moves = "Given a student's agenda, suggest up to 3 concrete, proactive planning moves (e.g. 'Block two hours Wednesday for the problem set', 'You have no study session before the exam'). Short imperative sentences. Empty list if all looks well.";
 
@@ -224,8 +218,6 @@ def:pub suggestions -> list[str] {
     return quick_suggestions();
 }
 
-
-# --- Ask Orbit (agentic tool-calling) ----------------------------------------
 
 def tool_today -> str;
 sem tool_today = "Return the user's items due today with their area and priority. Call this to know what is on today.";

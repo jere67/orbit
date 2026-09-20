@@ -74,7 +74,6 @@ node LogEntry {
         at: str = "";
 }
 
-# --- Response objects ---------------------------------------------------------
 # These plain data objects are the return types of endpoints. They live here,
 # alongside the nodes/enums and free of any server-only import (like datetime),
 # so client code can import them cleanly while endpoints bridge over RPC.

@@ -162,7 +162,6 @@ def _hash_id(text: str) -> str {
 }
 
 
-# --- Google Calendar (private ICS URL) ---------------------------------------
 
 """RFC 5545 line unfolding: continuation lines start with a space or tab."""
 def _unfold(text: str) -> list[str] {
@@ -308,7 +307,6 @@ def fetch_calendar -> list[ExternalItem] {
 }
 
 
-# --- Notion (a to-do database OR a checklist page) ---------------------------
 
 """The Notion API base URL (overridable via NOTION_API_BASE for testing)."""
 def _notion_base -> str {
@@ -485,7 +483,6 @@ def fetch_notion -> list[ExternalItem] {
 }
 
 
-# --- Status and sync ---------------------------------------------------------
 
 """Dry-run the connectors: return exactly what Google Calendar and Notion pull
 right now, WITHOUT writing anything to the graph. For verifying a real setup."""

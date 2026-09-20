@@ -46,7 +46,6 @@ def parse_due(due: str) -> datetime.datetime {
 
 
 def date_of(iso: str) -> str {
-    # The "YYYY-MM-DD" portion of any ISO timestamp.
     if not iso {
         return "";
     }
@@ -69,7 +68,6 @@ def hours_until(due: str) -> float {
 
 
 def days_between(a: str, b: str) -> int {
-    # Whole days from date `a` to date `b` (both "YYYY-MM-DD"), b - a.
     da = datetime.date.fromisoformat(a);
     db = datetime.date.fromisoformat(b);
     return (db - da).days;
@@ -77,21 +75,18 @@ def days_between(a: str, b: str) -> int {
 
 
 def add_days(base: str, n: int) -> str {
-    # base is "YYYY-MM-DD"; returns the date n days later, same format.
     d = datetime.date.fromisoformat(base);
     return (d + datetime.timedelta(days=n)).isoformat();
 }
 
 
 def weekday_of(iso: str) -> int {
-    # Monday=0 .. Sunday=6 for the date part of an ISO string.
     d = datetime.date.fromisoformat(date_of(iso));
     return d.weekday();
 }
 
 
 def pretty_date(iso_date: str) -> str {
-    # "YYYY-MM-DD" -> "Mon Sep 21".
     d = datetime.date.fromisoformat(iso_date);
     return d.strftime("%a %b %d");
 }
