@@ -90,20 +90,14 @@ def has_cloud_ai -> bool {
 
 """Whether to call the LLM at runtime.
 
-A cloud key enables AI (fast and stable). The bundled local model is opt-in via
-ORBIT_LOCAL_AI, because its CPU backend is slow and can abort on some hardware.
-So with no key and no opt-in, Orbit uses only its deterministic logic - fully
-functional and never crashes. ORBIT_AI_OFF force-disables AI regardless.
+AI is on by default: a cloud key routes to the hosted model, otherwise Orbit
+uses the bundled local model (Qwen). Every AI feature has a deterministic
+fallback, so nothing breaks if a call fails. Set ORBIT_AI_OFF=1 to force
+deterministic-only (e.g. if the local model is slow or unstable on your box).
 """
 def ai_enabled -> bool {
     ensure_env();
-    if os.getenv("ORBIT_AI_OFF") {
-        return False;
-    }
-    if has_cloud_ai() {
-        return True;
-    }
-    return bool(os.getenv("ORBIT_LOCAL_AI"));
+    return not bool(os.getenv("ORBIT_AI_OFF"));
 }
 
 

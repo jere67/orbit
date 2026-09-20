@@ -56,24 +56,20 @@ The same backend powers four surfaces (plus a bonus fifth): a **web app**, a
   server, client toolchain, and byLLM.
 - **Mobile** additionally needs the React Native / Expo toolchain, which
   `jac setup mobile` installs for you (Node is bundled by Jac).
-- **AI is optional and self-configuring.** Copy `.env.example` to `.env`:
-  - **Recommended:** set `ANTHROPIC_API_KEY` to use **Anthropic Claude** - fast,
-    reliable, and it powers every AI feature.
-  - **Default (no key):** Orbit uses only its **deterministic logic**. The day
-    plan, suggestions, briefing, chat, and connectors all still work - the app is
-    fully functional and never crashes, just without the LLM's prose and reasoning.
-  - **Local model (opt-in):** a bundled model runs fully offline, but its CPU
-    backend is slow and can abort on some hardware, so it is off by default.
-    Enable it by installing it once and setting `ORBIT_LOCAL_AI=1` in `.env`:
+- **AI is on by default and self-configuring.** Copy `.env.example` to `.env`:
+  - **Default (no key):** Orbit uses the **bundled local model (Qwen)** - fully
+    offline, no key required. It runs the day plan, chat, weekly overview, and
+    capture on your machine. (Its CPU backend is slower than the cloud and can
+    be unstable on some hardware.)
+  - **Recommended for a demo:** set `ANTHROPIC_API_KEY` to route to **Anthropic
+    Claude** - faster and more reliable than the local model.
+  - **Deterministic-only:** set `ORBIT_AI_OFF=1` to skip the model entirely and
+    use Orbit's deterministic logic - every AI feature has a fallback, so the
+    app is fully functional either way and never breaks.
 
-    ```bash
-    jac install 'byllm[local]'
-    jac model pull qwen3.5-4b
-    ```
-
-  Set `ORBIT_AI_OFF=1` to force deterministic-only even with a key. Out of the
-  box Orbit never touches a model, so it can never crash on AI; add a cloud key
-  for the full experience. (Orbit also caps every prompt it sends the model.)
+  The local model needs a one-time install (bundled with the `byllm[local]`
+  dependency; pull the weights with `jac model pull qwen3.5-4b`). Orbit also
+  caps every prompt it sends the model.
 
 ---
 
