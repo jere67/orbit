@@ -126,7 +126,7 @@ glob styles = StyleSheet.create({
     "sectionTitle": {"color": "#24201b", "fontSize": 17, "fontWeight": "700"},
     "sectionMeta": {"color": "#8a8073", "fontSize": 12, "marginLeft": "auto"},
 
-    "weekRow": {"gap": 10, "paddingVertical": 4, "paddingRight": 8},
+    "weekRow": {"gap": 10, "paddingVertical": 4},
     "dayCol": {"width": 150, "backgroundColor": "#ffffff", "borderRadius": 14, "borderWidth": 1, "borderColor": "#e4dccf", "padding": 10, "gap": 2},
     "dayColToday": {"width": 150, "backgroundColor": "#ffffff", "borderRadius": 14, "borderWidth": 1, "borderColor": "#ff5c45", "padding": 10, "gap": 2},
     "dayHead": {"flexDirection": "row", "alignItems": "baseline", "gap": 6, "borderBottomWidth": 1, "borderBottomColor": "#e4dccf", "paddingBottom": 6, "marginBottom": 4},
@@ -492,8 +492,11 @@ def:pub app -> JsxElement {
         dow = parts[0] if len(parts) > 0 else b.label;
         daynum = parts[2] if len(parts) > 2 else "";
         open_count = len([it for it in b.items if not is_settled(it)]);
+        # Fill the row's full width when all 7 days fit (no right-hand gap);
+        # fall back to a readable min width and scroll horizontally on a phone.
+        col_w = max(140.0, (Dimensions.get("window").width - 96.0) / 7.0);
         return
-            <View key={b.date} style={styles["dayColToday"] if is_today else styles["dayCol"]}>
+            <View key={b.date} style={[styles["dayColToday"] if is_today else styles["dayCol"], {"width": col_w}]}>
                 <View style={styles["dayHead"]}>
                     <Text style={styles["dayNameToday"] if is_today else styles["dayName"]}>{dow}</Text>
                     <Text style={styles["dayNum"]}>{daynum}</Text>
