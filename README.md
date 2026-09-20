@@ -59,20 +59,21 @@ The same backend powers four surfaces (plus a bonus fifth): a **web app**, a
 - **AI is optional and self-configuring.** Copy `.env.example` to `.env`:
   - **Recommended:** set `ANTHROPIC_API_KEY` to use **Anthropic Claude** - fast,
     reliable, and it powers every AI feature.
-  - **With no key (default):** Orbit uses only its **deterministic logic**. The
-    day plan, suggestions, briefing, and connectors all still work - the app is
-    fully functional and rock-solid, just without the LLM's prose and reasoning.
-  - **Local model (opt-in):** the bundled local model is powerful but its CPU
-    backend is slow and can be unstable on some hardware, so it is off by
-    default. To use it, install it once and set `ORBIT_LOCAL_AI=1` in `.env`:
+  - **Default (no key):** Orbit uses only its **deterministic logic**. The day
+    plan, suggestions, briefing, chat, and connectors all still work - the app is
+    fully functional and never crashes, just without the LLM's prose and reasoning.
+  - **Local model (opt-in):** a bundled model runs fully offline, but its CPU
+    backend is slow and can abort on some hardware, so it is off by default.
+    Enable it by installing it once and setting `ORBIT_LOCAL_AI=1` in `.env`:
 
     ```bash
     jac install 'byllm[local]'
-    jac model pull gemma-4-e4b
+    jac model pull qwen3.5-4b
     ```
 
-  So out of the box Orbit never crashes on AI; add a cloud key for the full
-  JARVIS experience. (Orbit also caps every prompt it sends the model.)
+  Set `ORBIT_AI_OFF=1` to force deterministic-only even with a key. Out of the
+  box Orbit never touches a model, so it can never crash on AI; add a cloud key
+  for the full experience. (Orbit also caps every prompt it sends the model.)
 
 ---
 
@@ -84,16 +85,19 @@ From the repository root:
 jac run
 ```
 
-Open **http://localhost:8000**. On first run the graph is empty - start
-capturing your own items in the bar at the top, or connect your Google Calendar
+Open **http://localhost:8000** (the first run installs dependencies, so give it
+a moment). **On first run the graph is empty - you do not need to connect
+anything to start.** Type a task into the capture bar at the top (e.g. "read the
+FlashAttention paper by Friday") and Orbit files it, or connect Google Calendar
 and Notion (see below) and click **Sync now** to pull in your real schedule.
 
-The four tabs:
+The web app's tabs:
 
-- **Briefing** - today, this week, slipping, and overload flags.
+- **Briefing** - today's plan, this week, slipping, and overload flags.
+- **Chat** - ask Orbit about your week, your deadlines, or what to do first.
 - **Agenda** - every item, add/complete/delete, filterable by area.
 - **Insight** - streaks, completion, area load, and the deadline density chart.
-- **Settings** - add, rename, and archive areas at runtime.
+- **Settings** - connectors, plus add/rename/archive areas at runtime.
 
 ---
 
@@ -132,26 +136,26 @@ First-time setup (installs the React Native / Expo scaffold):
 jac setup mobile
 ```
 
-Then run the dev server (keep `jac run` running in another terminal for the
-backend):
+Then, with the backend running (`jac run` in another terminal), start the
+mobile app in the browser via react-native-web - no Android SDK or Xcode
+needed:
 
 ```bash
-jac run --dev mobile
+jac run --platform web mobile --dev
 ```
 
-Metro/Expo starts and prints a QR code and URLs. Press **`w`** to open the web
-preview, **`a`** for an Android emulator, or scan the QR with the Expo Go app on
-a physical device. You can also produce a standalone build:
+This is the simplest way to see the mobile app. Running it on a real device or
+emulator needs the platform toolchains:
 
 ```bash
-jac build mobile --platform web      # browser bundle
-jac build mobile --platform android  # needs Android SDK
-jac build mobile --platform ios      # needs Xcode
+jac run --platform android mobile   # needs Android SDK + emulator/device
+jac run --platform ios mobile       # needs Xcode (macOS)
 ```
 
-The mobile app is a focused triage surface: read the AI briefing, complete
-today's items with a tap, and quick-capture new ones - all against the same
-backend as the web and CLI.
+The mobile app is a full port of the web experience - the same five tabs
+(Briefing, Chat, Agenda, Insight, Settings), the same warm theme, and a fixed
+bottom tab bar - rebuilt in React Native primitives against the same backend as
+the web and CLI.
 
 ---
 
@@ -227,9 +231,9 @@ What makes Orbit stand out:
 ## Development
 
 ```bash
-jac check        # type-check and lint every app
-jac test         # run the core test suite (pure-logic + graph tests)
-jac run --show   # show the resolved run plan for each app
+jac check <file>                   # type-check and lint
+jac test                           # run the core test suite (pure-logic + graph tests)
+jac build mobile --platform web    # bundle the mobile app for the browser
 ```
 
 The core logic lives in `core/orbit/`; the surfaces are in `web/`, `mobile/`,
