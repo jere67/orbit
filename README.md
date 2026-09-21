@@ -166,6 +166,14 @@ jac run desktop
 It embeds a webview over the same served client and backend, so it is the exact
 web experience as a desktop application.
 
+> **Platform note:** the desktop target's native build backend is currently
+> **Linux-only** - it assembles the native window from GTK3 + WebKitGTK, so
+> `jac run desktop` only builds on a Linux host. On macOS or Windows it exits
+> with `The current desktop native build backend supports Linux hosts, not
+> <host>`. To try it from macOS/Windows, build it inside a Linux VM or
+> container. Because the desktop app just wraps the same served client, running
+> the web app (`jac run`) shows the identical UI.
+
 ---
 
 ## Connect your Calendar and Notion (optional)
@@ -176,7 +184,15 @@ none configured the app runs exactly as above. Copy `.env.example` to `.env`,
 fill in any subset, and click **Sync now** in Settings (or run `jac run cli sync`).
 
 - **Google Calendar** - in Calendar settings, copy the calendar's *"Secret
-  address in iCal format"* and set `ORBIT_CAL_ICS_URL`. No OAuth needed.
+  address in iCal format"* and set `ORBIT_CAL_ICS_URL` (read-only, no OAuth
+  needed). Assign its events to an area with `ORBIT_CAL_AREA` (default `other`).
+  - **Multiple calendars:** import several color-coded feeds with
+    `ORBIT_CAL_ICS_URLS` - a list of `area|url` pairs separated by `;`, e.g.
+    `research|https://…;fitness|https://…`, so each Google calendar maps to its
+    own Orbit area. Use the area `auto` to infer each event's area from its
+    title (e.g. `auto|https://…`). The two variables **combine**: set either, or
+    both (a single feed via `ORBIT_CAL_ICS_URL` plus a set via
+    `ORBIT_CAL_ICS_URLS`), and all feeds are pulled.
 - **Notion** - create an internal integration at
   [notion.so/my-integrations](https://www.notion.so/my-integrations), share your
   to-do database with it, and set `NOTION_TOKEN` + `NOTION_DB_ID` (plus the
