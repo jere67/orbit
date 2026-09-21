@@ -194,9 +194,17 @@ fill in any subset, and click **Sync now** in Settings (or run `jac run cli sync
     both (a single feed via `ORBIT_CAL_ICS_URL` plus a set via
     `ORBIT_CAL_ICS_URLS`), and all feeds are pulled.
 - **Notion** - create an internal integration at
-  [notion.so/my-integrations](https://www.notion.so/my-integrations), share your
-  to-do database with it, and set `NOTION_TOKEN` + `NOTION_DB_ID` (plus the
-  property names if they differ from `Name` / `Due`).
+  [notion.so/my-integrations](https://www.notion.so/my-integrations), copy its
+  secret to `NOTION_TOKEN`, and share the page or database with it. Orbit reads
+  from **either** source:
+  - **A database** - set `NOTION_DB_ID`. Each open row becomes an item; override
+    the property names with `ORBIT_NOTION_TITLE_PROP` / `ORBIT_NOTION_DATE_PROP`
+    if they differ from `Name` / `Due`.
+  - **A checklist page** - set `NOTION_PAGE_ID` instead, and Orbit pulls the
+    open to-do checkboxes from that page (nested blocks included).
+  - If both are set, `NOTION_PAGE_ID` takes precedence. Assign imported items to
+    an area with `ORBIT_NOTION_AREA` (default `coursework`), or set it to `auto`
+    to infer each item's area from its title.
 
 Re-syncing updates imported items in place (keyed by source + external id)
 rather than duplicating them.
