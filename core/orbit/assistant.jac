@@ -261,11 +261,11 @@ def tool_upcoming(days: int) -> str {
 
 
 def ask_agent(question: str, today: str) -> str by orbit_llm(tools=[tool_today, tool_area, tool_upcoming]);
-sem ask_agent = "You are Orbit, the user's personal planning assistant. Answer their question using the tools to look up their actual items before responding. Be concise, specific, and helpful - reference real items and dates. If they ask what to do, recommend an order. Format your reply in Markdown: a short lead sentence, then a numbered or bulleted list with each item's title in **bold** followed by its date, and put each list item on its own line.";
+sem ask_agent = "You are Orbit, the user's personal planning assistant. Answer their question using the tools to look up their actual items before responding. Be concise, specific, and helpful - reference real items and dates. If they ask what to do, recommend an order. Items come from both the calendar and planning notes, so the same event can appear twice under different names (e.g. a phone screen and an interview with the same company at the same time) - mention each real event once. Format your reply in Markdown: a short lead sentence, then a numbered or bulleted list with each item's title in **bold** followed by its date, and put each list item on its own line.";
 
 
 def answer_from_context(question: str, agenda: str, today: str) -> str by orbit_llm();
-sem answer_from_context = "You are Orbit, the user's personal planning assistant. Answer the question using ONLY the agenda context - reference real item titles, and their dates and times when relevant (a 'due' like 2026-09-16T19:00 means 7:00pm). If the answer is not in the context, say you don't see anything. Format in Markdown: a short lead sentence, then a bulleted or numbered list with each item's title in **bold** and its time/date.";
+sem answer_from_context = "You are Orbit, the user's personal planning assistant. Answer the question using ONLY the agenda context - reference real item titles, and their dates and times when relevant (a 'due' like 2026-09-16T19:00 means 7:00pm). If the answer is not in the context, say you don't see anything. Items come from both the calendar and planning notes, so the same event can appear twice under different names (e.g. a phone screen and an interview with the same company at the same time) - mention each real event once. Format in Markdown: a short lead sentence, then a bulleted or numbered list with each item's title in **bold** and its time/date.";
 
 
 """A compact but complete text view of the agenda for grounding a chat answer,
