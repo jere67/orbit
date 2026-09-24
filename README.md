@@ -200,14 +200,30 @@ fill in any subset, and click **Sync now** in Settings (or run `jac run cli sync
   - **A database** - set `NOTION_DB_ID`. Each open row becomes an item; override
     the property names with `ORBIT_NOTION_TITLE_PROP` / `ORBIT_NOTION_DATE_PROP`
     if they differ from `Name` / `Due`.
-  - **A checklist page** - set `NOTION_PAGE_ID` instead, and Orbit pulls the
-    open to-do checkboxes from that page (nested blocks included).
+  - **A planning page** - set `NOTION_PAGE_ID` instead, and Orbit reads the
+    page's structure (nested blocks included):
+    - To-do checkboxes under a weekday heading (`Monday` ... `Sunday`, e.g. a
+      column per day) become that day's work sessions in the current week;
+      other to-dos become undated tasks. A checked box marks the item done.
+    - Lines like `Project: task one 9/24 5:30pm | task two (paused until Oct 2)`
+      split into one task per `|` part, titled with the project. Dates and
+      clock times become the due, and status such as `(paused ...)` or
+      `- done, one chore left` moves to the notes. The AI model judges each
+      line's shape - separate tasks, one task whose parts are its subtasks
+      (e.g. a study list), or not a to-do at all (a motto, a watch list) - and
+      its verdict is cached, so only new or edited lines are re-read.
+    - A note that restates a calendar event (same day, same name within an
+      hour) is dropped in favour of the calendar's copy.
   - If both are set, `NOTION_PAGE_ID` takes precedence. Assign imported items to
     an area with `ORBIT_NOTION_AREA` (default `coursework`), or set it to `auto`
     to infer each item's area from its title.
 
+Recurring calendar events are expanded into one item per occurrence (with
+exceptions, edited occurrences, and cancellations applied).
+
 Re-syncing updates imported items in place (keyed by source + external id)
-rather than duplicating them.
+rather than duplicating them, and removes open items the source no longer has
+(a cancelled event, an edited or split note). Completed items are kept.
 
 ---
 
