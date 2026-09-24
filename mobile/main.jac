@@ -344,7 +344,7 @@ def:pub app -> JsxElement {
             if r.error {
                 parts.append(r.source + ": error");
             } else {
-                parts.append(r.source + " " + str(r.imported) + " new, " + str(r.updated) + " updated");
+                parts.append(r.source + " " + str(r.imported) + " new, " + str(r.updated) + " updated" + ((", " + str(r.removed) + " removed") if r.removed else ""));
             }
         }
         sync_summary = ("Synced - " + "   ".join(parts)) if parts else "No connectors configured yet.";

@@ -178,7 +178,8 @@ def run_sync -> int {
             if r["configured"] {
                 any_configured = True;
                 extra = ("  error: " + r["error"]) if r["error"] else "";
-                print(f"{r['source']}: +{r['imported']} new, {r['updated']} updated{extra}");
+                removed = f", {r['removed']} removed" if r.get("removed") else "";
+                print(f"{r['source']}: +{r['imported']} new, {r['updated']} updated{removed}{extra}");
             }
         }
         if not any_configured {

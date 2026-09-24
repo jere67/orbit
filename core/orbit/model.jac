@@ -178,5 +178,6 @@ obj SyncResult {
         configured: bool = False,
         imported: int = 0,
         updated: int = 0,
+        removed: int = 0,
         error: str = "";
 }

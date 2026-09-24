@@ -102,6 +102,8 @@ theme_color = "#6366f1"
 
 [dependencies]
 "byllm[local]" = ">=0.0.0"
+"python-dateutil" = ">=2.8"
+"types-python-dateutil" = ">=2.8"
 [dependencies.npm]
 marked = "^14.1.4"
 "@fontsource-variable/geist" = "*"
