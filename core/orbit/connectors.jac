@@ -13,6 +13,8 @@ import os;
 import re;
 import json;
 import hashlib;
+import datetime;
+import zoneinfo;
 import urllib.request;
 
 import from .config { env, has_env, ai_status }
@@ -178,17 +180,46 @@ def _unfold(text: str) -> list[str] {
 }
 
 
-"""Turn an ICS datetime ('20260920T150000Z' or '20260920') into ISO."""
-def _ics_date(val: str) -> str {
+"""Turn an ICS DTSTART value into a local ISO string.
+
+`params` is the property's parameter list (e.g. ';TZID=America/Detroit' or
+';VALUE=DATE'). All-day dates stay date-only. Timed values are converted to
+`local_tz` (default: the server's local zone, the same clock as `now_dt`): a
+trailing 'Z' means UTC, a TZID names the event's own zone, and neither means
+floating local time, kept as written. Google exports most events in UTC, so
+skipping the conversion shifts every time (and late events' dates)."""
+def _ics_date(val: str, params: str = "", local_tz: datetime.tzinfo | None = None) -> str {
     v = val.strip();
-    if len(v) >= 8 and v[:8].isdigit() {
-        iso = v[:4] + "-" + v[4:6] + "-" + v[6:8];
-        if "T" in v and len(v) >= 13 {
-            iso = iso + "T" + v[9:11] + ":" + v[11:13];
-        }
-        return iso;
+    if len(v) < 8 or not v[:8].isdigit() {
+        return "";
     }
-    return "";
+    if "T" not in v or len(v) < 13 {
+        return v[:4] + "-" + v[4:6] + "-" + v[6:8];
+    }
+    try {
+        naive = datetime.datetime(
+            int(v[:4]), int(v[4:6]), int(v[6:8]), int(v[9:11]), int(v[11:13])
+        );
+    } except ValueError {
+        return "";
+    }
+    src_tz: datetime.tzinfo | None = None;
+    if v.endswith("Z") {
+        src_tz = datetime.timezone.utc;
+    } else {
+        m = re.search(r"TZID=([^;:]+)", params);
+        if m {
+            try {
+                src_tz = zoneinfo.ZoneInfo(m.group(1).strip('"'));
+            } except Exception {
+                src_tz = None;
+            }
+        }
+    }
+    if src_tz is None {
+        return naive.strftime("%Y-%m-%dT%H:%M");
+    }
+    return naive.replace(tzinfo=src_tz).astimezone(local_tz).strftime("%Y-%m-%dT%H:%M");
 }
 
 
@@ -240,7 +271,7 @@ def _parse_ics(text: str, area: str) -> list[ExternalItem] {
             cur = {};
         } elif ln == "END:VEVENT" {
             if "SUMMARY" in cur and is_real_title(cur["SUMMARY"]) {
-                due = _ics_date(cur["DTSTART"]) if "DTSTART" in cur else "";
+                due = _ics_date(cur["DTSTART"], cur.get("DTSTART_PARAMS", "")) if "DTSTART" in cur else "";
                 d = date_of(due);
                 if (not d) or (d >= start and d <= horizon) {
                     uid = cur["UID"] if "UID" in cur else _hash_id(cur["SUMMARY"] + due);
@@ -258,6 +289,9 @@ def _parse_ics(text: str, area: str) -> list[ExternalItem] {
             key = namepart.split(";")[0];
             if key == "SUMMARY" or key == "DTSTART" or key == "UID" {
                 cur[key] = value;
+            }
+            if key == "DTSTART" {
+                cur["DTSTART_PARAMS"] = namepart[len(key):];
             }
         }
     }

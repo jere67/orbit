@@ -1,12 +1,13 @@
 """Core test suite for Orbit. Pure-logic tests carry the coverage; the graph
 test creates uniquely-marked nodes and cleans them up to stay isolated."""
 
+import zoneinfo;
 import from .model { Item, Priority, Status, ItemKind }
 import from .scoring { due_pressure, priority_weight, urgency, rank, is_open }
 import from .timeutil { today_str, add_days, days_between }
 import from .items { next_due, add_item, list_items, complete_item, item_by_id, delete_item }
 import from .ai { _guess_due, _fallback_parse }
-import from .connectors { _ics_date, _unfold, _notion_title, _notion_date }
+import from .connectors { _ics_date, _unfold, _parse_ics, _notion_title, _notion_date }
 
 
 test "no due date has zero pressure" {
@@ -97,9 +98,32 @@ test "unknown area falls back to other" {
 }
 
 test "ICS date parsing handles date and datetime forms" {
+    detroit = zoneinfo.ZoneInfo("America/Detroit");
     assert _ics_date("20260920") == "2026-09-20";
-    assert _ics_date("20260920T150000Z") == "2026-09-20T15:00";
+    assert _ics_date("20260920", ";VALUE=DATE") == "2026-09-20";
+    # UTC ('Z') converts to local time, across DST and across midnight.
+    assert _ics_date("20260920T150000Z", "", detroit) == "2026-09-20T11:00";
+    assert _ics_date("20261215T150000Z", "", detroit) == "2026-12-15T10:00";
+    assert _ics_date("20260925T030000Z", "", detroit) == "2026-09-24T23:00";
+    # A TZID names the event's own zone.
+    assert _ics_date("20260812T181500", ";TZID=America/Vancouver", detroit) == "2026-08-12T21:15";
+    # No zone (or an unknown one) is floating local time, kept as written.
+    assert _ics_date("20260920T150000", "", detroit) == "2026-09-20T15:00";
+    assert _ics_date("20260920T150000", ";TZID=Not/AZone", detroit) == "2026-09-20T15:00";
     assert _ics_date("garbage") == "";
+}
+
+test "ICS parsing passes each event's TZID through to the date conversion" {
+    day = today_str().replace("-", "");
+    ics = "\n".join([
+        "BEGIN:VCALENDAR",
+        "BEGIN:VEVENT", "UID:utc-1", "SUMMARY:Standup", "DTSTART:" + day + "T150000Z", "END:VEVENT",
+        "BEGIN:VEVENT", "UID:tz-1", "SUMMARY:Gym", "DTSTART;TZID=America/Vancouver:" + day + "T090000", "END:VEVENT",
+        "END:VCALENDAR"
+    ]);
+    dues = {e.external_id: e.due for e in _parse_ics(ics, "other")};
+    assert dues["utc-1"] == _ics_date(day + "T150000Z");
+    assert dues["tz-1"] == _ics_date(day + "T090000", ";TZID=America/Vancouver");
 }
 
 test "ICS line unfolding joins continuation lines" {
