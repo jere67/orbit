@@ -45,7 +45,7 @@ def _keyword_area(title: str, keys: list[str]) -> str {
 }
 
 
-glob NOTION_MONTHS: dict = {
+glob NOTION_MONTHS: dict[str, int] = {
     "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
     "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
     "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10,
@@ -139,7 +139,7 @@ obj ExternalItem {
 
 
 """GET a JSON endpoint with headers."""
-def _http_get(url: str, headers: dict) -> dict {
+def _http_get(url: str, headers: dict[str, str]) -> dict {
     req = urllib.request.Request(url, headers=headers, method="GET");
     with urllib.request.urlopen(req, timeout=20) as resp {
         return json.loads(resp.read().decode("utf-8"));
@@ -148,7 +148,7 @@ def _http_get(url: str, headers: dict) -> dict {
 
 
 """POST a JSON body to an endpoint with headers."""
-def _http_post(url: str, headers: dict, payload: dict) -> dict {
+def _http_post(url: str, headers: dict[str, str], payload: dict) -> dict {
     body = json.dumps(payload).encode("utf-8");
     merged = {**headers, "Content-Type": "application/json"};
     req = urllib.request.Request(url, data=body, headers=merged, method="POST");
@@ -349,7 +349,7 @@ def _notion_base -> str {
 
 
 """The Notion auth headers."""
-def _notion_headers(token: str) -> dict {
+def _notion_headers(token: str) -> dict[str, str] {
     return {"Authorization": "Bearer " + token, "Notion-Version": "2022-06-28"};
 }
 
@@ -425,7 +425,7 @@ def _looks_like_task(text: str, due: str) -> bool {
 checkboxes (a habit/day list, deduped by title) and freeform paragraph/bullet
 lines that are dated or 'Heading: task' shaped (the detailed course breakdowns).
 Recurses into nested blocks (bounded)."""
-def _notion_page_items(token: str, block_id: str, area: str, depth: int, seen: set) -> list[ExternalItem] {
+def _notion_page_items(token: str, block_id: str, area: str, depth: int, seen: set[str]) -> list[ExternalItem] {
     out = [];
     if depth > 4 {
         return out;
