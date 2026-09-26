@@ -1,15 +1,19 @@
 """Core test suite for Orbit. Pure-logic tests carry the coverage; the graph
 test creates uniquely-marked nodes and cleans them up to stay isolated."""
 
+import os;
 import zoneinfo;
-import from .model { Item, Priority, Status, ItemKind }
+import from .model { Item, Area, Priority, Status, ItemKind }
 import from .scoring { due_pressure, priority_weight, urgency, rank, is_open }
 import from .timeutil { today_str, add_days, days_between }
-import from .items { next_due, add_item, list_items, complete_item, item_by_id, delete_item, list_subtasks }
+import from .items { next_due, add_item, list_items, complete_item, item_by_id, delete_item, list_subtasks, retag_item }
+import from .areas { list_areas }
 import from .ai { _guess_due, _fallback_parse }
 import from .connectors {
     _ics_date, _unfold, _parse_ics, _notion_title, _notion_date, _notion_lines, _notion_items,
-    _plan_date, _expand_note, _drop_calendar_dupes, _ingest, ExternalItem
+    _plan_date, _expand_note, _drop_calendar_dupes, _ingest, ExternalItem, NoteTask, NoteReading,
+    _reading_items, _pick_key, _fallback_area, _decided_area, _similar_filings, Filing, _db_fields, _db_done,
+    _structural_readings, _resolve_areas
 }
 
 
@@ -282,7 +286,9 @@ test "Notion page structure becomes dated plan sessions and split tasks" {
         _blk("heading_2", "Notes"),
         _blk("paragraph", "Shows: Bleach | Oshi no Ko")
     ];
-    items = _notion_items(_notion_lines(blocks), "2026-09-24", {"Shows: Bleach | Oshi no Ko": "NOT_A_TASK"});
+    note = "Recruiting: Phone Screen 9/24 5:30pm | Ramp OA";
+    read = {note: _expand_note(note, "SEPARATE_TASKS", "2026-09-24"), "Shows: Bleach | Oshi no Ko": []};
+    items = _notion_items(_notion_lines(blocks), "2026-09-24", read);
     assert [[it.title, it.kind, it.due, it.done] for it in items] == [
         ["Recruiting: Phone Screen", "EVENT", "2026-09-24T17:30", False],
         ["Recruiting: Ramp OA", "TASK", "", False],
@@ -343,4 +349,166 @@ test "sync upserts, mirrors source completion, and prunes stale open items" {
     assert r3.removed == 2;
     assert [it.external_id for it in [root-->][?:Item] if it.source == src] == ["k"];
     delete_item(jid(mine["k"]));
+}
+
+
+"""Set an environment variable for a test; returns the value to restore."""
+def _swap_env(key: str, value: str) -> str | None {
+    before = os.environ.get(key);
+    os.environ[key] = value;
+    return before;
+}
+
+
+"""Undo `_swap_env`."""
+def _restore_env(key: str, before: str | None) {
+    if before is None {
+        del os.environ[key];
+    } else {
+        os.environ[key] = before;
+    }
+}
+
+
+test "note parts split on semicolons, and a semicolon list is not a label" {
+    today = "2026-09-24";
+    errands = _expand_note("Groceries; laundry; call landlord re: lease", "SEPARATE_TASKS", today);
+    assert [it.title for it in errands] == ["Groceries", "laundry", "call landlord re: lease"];
+    apply = _expand_note("Apply: Acme OA; Globex cover letter (Oct 3)", "SEPARATE_TASKS", today);
+    assert [[it.title, it.due] for it in apply] == [["Apply: Acme OA", ""], ["Apply: Globex cover letter", "2026-10-03"]];
+}
+
+test "a model reading keeps only what the line itself supports" {
+    today = "2026-09-24";
+    line = "Recruiting: Phone Screen 9/24 5:30pm | Ramp OA (paused) | Dune";
+    reading = NoteReading(todos=[
+        NoteTask(title="Recruiting: Phone Screen 9/24", when="9/24 5:30pm"),
+        NoteTask(title="Recruiting: Ramp OA", when="Oct 2", status="paused", later=True),
+        NoteTask(title="Buy concert tickets"),
+        NoteTask(title="Recruiting: Dune", steps=["Dune", "Arrakis travel"])
+    ]);
+    items = _reading_items(line, "", reading, today);
+    assert items is not None;
+    assert [[it.title, it.kind, it.due, it.priority, it.notes, it.subtasks] for it in items] == [
+        ["Recruiting: Phone Screen", "EVENT", "2026-09-24T17:30", "MED", "", []],
+        ["Recruiting: Ramp OA", "TASK", "", "LOW", "paused", []],
+        ["Recruiting: Dune", "TASK", "", "MED", "", ["Dune"]]
+    ];
+    # Nothing the model named is in the line: a misread, not an empty line.
+    assert _reading_items("Call mom", "", NoteReading(todos=[NoteTask(title="Water the plants")]), today) is None;
+    assert _reading_items("Stay hungry", "", NoteReading(todos=[]), today) == [];
+    dated = _reading_items("Lab report due Oct 5", "BIO 201", NoteReading(todos=[NoteTask(title="BIO 201: Lab report", when="Oct 5")]), today);
+    assert [[it.title, it.kind, it.due] for it in dated] == [["BIO 201: Lab report", "DEADLINE", "2026-10-05"]];
+}
+
+test "an area answer is matched to a key by key or label" {
+    areas = [Area(key="fitness", label="Fitness"), Area(key="jobs", label="Job Hunt")];
+    assert _pick_key("fitness", areas) == "fitness";
+    assert _pick_key("fitness: Fitness", areas) == "fitness";
+    assert _pick_key(" Job Hunt ", areas) == "jobs";
+    assert _pick_key("'jobs'", areas) == "jobs";
+    assert _pick_key("research", areas) == "";
+}
+
+test "without a model, areas come from the person's filings, then area hints" {
+    areas = [
+        Area(key="research", label="Research", hint="AIMS lab, paper reading"),
+        Area(key="coursework", label="Coursework", hint="lectures, homework, exams"),
+        Area(key="fitness", label="Fitness", hint="gym, workouts"),
+        Area(key="other", label="Other")
+    ];
+    filings = [Filing(title="STRATA investor call", area="research"), Filing(title="EECS 482 lecture", area="coursework")];
+    assert _fallback_area("STRATA investor call prep", areas, filings) == "research";
+    assert _fallback_area("AIMS weekly sync", areas, filings) == "research";
+    assert _fallback_area("FIN 302 homework", areas, filings) == "coursework";
+    assert _fallback_area("Gym", areas, filings) == "fitness";
+    assert _fallback_area("Dentist", areas, filings) == "other";
+    similar = _similar_filings("EECS 482 project", filings + [Filing(title="EECS 491 OH", area="ta")], 2);
+    assert similar == ["EECS 482 lecture -> coursework", "EECS 491 OH -> ta"];
+}
+
+test "Notion database columns are found by type, and done rows are marked" {
+    cols = {
+        "Task": {"type": "title", "title": [{"plain_text": "Write report"}]},
+        "When": {"type": "date", "date": {"start": "2026-10-01"}},
+        "Status": {"type": "status", "status": {"name": "Done"}}
+    };
+    title_pin = _swap_env("ORBIT_NOTION_TITLE_PROP", "");
+    date_pin = _swap_env("ORBIT_NOTION_DATE_PROP", "");
+    try {
+        fields = _db_fields(cols);
+        assert [fields["title"], fields["date"], fields["status"], fields["checkbox"]] == ["Task", "When", "Status", ""];
+        assert _notion_title(cols, fields["title"]) == "Write report";
+        assert _notion_date(cols, fields["date"]) == "2026-10-01";
+        assert _db_done(cols, fields);
+        ticked = {"Name": {"type": "title", "title": []}, "Done?": {"type": "checkbox", "checkbox": False}};
+        assert not _db_done(ticked, _db_fields(ticked));
+    } finally {
+        _restore_env("ORBIT_NOTION_TITLE_PROP", title_pin);
+        _restore_env("ORBIT_NOTION_DATE_PROP", date_pin);
+    }
+}
+
+test "with AI off, note lines fall back to the conservative structural reading" {
+    before = _swap_env("ORBIT_AI_OFF", "1");
+    try {
+        read = _structural_readings(["Week: 37", "Call mom", "Errands: Pharmacy | Bank", "Dentist 10/3"], "2026-09-24");
+        assert sorted(read.keys()) == ["Dentist 10/3", "Errands: Pharmacy | Bank"];
+        assert [it.title for it in read["Errands: Pharmacy | Bank"]] == ["Errands: Pharmacy", "Errands: Bank"];
+    } finally {
+        _restore_env("ORBIT_AI_OFF", before);
+    }
+}
+
+test "sync files auto items and re-files them, unless moved by hand" {
+    before = _swap_env("ORBIT_AI_OFF", "1");
+    src = "orbit-test-refile";
+    try {
+        list_areas();
+        pulled = [
+            ExternalItem(title="Gym session", area_key="auto", external_id="g"),
+            ExternalItem(title="Midterm exam review", area_key="auto", external_id="m")
+        ];
+        _resolve_areas(pulled);
+        assert [it.area_key for it in pulled] == ["fitness", "coursework"];
+        _ingest(src, True, pulled);
+        mine = {it.external_id: it for it in [root-->][?:Item] if it.source == src};
+        assert mine["g"].area_key == "fitness";
+        retag_item(jid(mine["g"]), "clubs");
+        # A later pull files the same items to 'other': the hand-moved one stays.
+        _ingest(src, True, [
+            ExternalItem(title="Gym session", area_key="other", external_id="g"),
+            ExternalItem(title="Midterm exam review", area_key="other", external_id="m")
+        ]);
+        assert mine["g"].area_key == "clubs";
+        assert mine["m"].area_key == "other";
+    } finally {
+        for it in [root-->][?:Item] {
+            if it.source == src {
+                delete_item(jid(it));
+            }
+        }
+        _restore_env("ORBIT_AI_OFF", before);
+    }
+}
+
+test "the person's distinctive hint words decide an area before any model" {
+    areas = [
+        Area(key="ta", label="TA", hint="IA for EECS 491: office hours (OH), Piazza, time cards"),
+        Area(key="coursework", label="Coursework", hint="EECS 482, FIN 302: lectures, homework"),
+        Area(key="jobs", label="Job Hunt", hint="OAs and interviews at firms like Old Mission"),
+        Area(key="clubs", label="Clubs", hint="Michigan Blockchain, including its research and interviews"),
+        Area(key="research", label="Research", hint="AIMS lab")
+    ];
+    assert _decided_area("EECS IA Time Card Update", areas, []) == "ta";
+    assert _decided_area("Old Mission Test", areas, []) == "jobs";
+    assert _decided_area("Michigan Blockchain: Research Agent", areas, []) == "clubs";
+    # 'EECS' is shared, and 'OH' vs '482' tie: the words do not decide.
+    assert _decided_area("EECS 482 - OH", areas, []) == "";
+    assert _decided_area("Muay Thai", areas, []) == "";
+    # Everyday words ('homework', 'research') are the model's call, not names.
+    assert _decided_area("Student loan homework", areas, []) == "";
+    assert _decided_area("Research paper", areas, []) == "";
+    # A title the person filed themselves wins outright.
+    assert _decided_area("Old Mission Test", areas, [Filing(title="old mission test", area="clubs")]) == "clubs";
 }
