@@ -185,38 +185,65 @@ fill in any subset, and click **Sync now** in Settings (or run `jac run cli sync
 
 - **Google Calendar** - in Calendar settings, copy the calendar's *"Secret
   address in iCal format"* and set `ORBIT_CAL_ICS_URL` (read-only, no OAuth
-  needed). Assign its events to an area with `ORBIT_CAL_AREA` (default `other`).
+  needed). Its events are filed by title (see *How imports are filed* below),
+  or all go to one area with `ORBIT_CAL_AREA`.
   - **Multiple calendars:** import several color-coded feeds with
     `ORBIT_CAL_ICS_URLS` - a list of `area|url` pairs separated by `;`, e.g.
     `research|https://…;fitness|https://…`, so each Google calendar maps to its
-    own Orbit area. Use the area `auto` to infer each event's area from its
-    title (e.g. `auto|https://…`). The two variables **combine**: set either, or
+    own Orbit area. Use the area `auto` to file each event by its title
+    (e.g. `auto|https://…`). The two variables **combine**: set either, or
     both (a single feed via `ORBIT_CAL_ICS_URL` plus a set via
     `ORBIT_CAL_ICS_URLS`), and all feeds are pulled.
 - **Notion** - create an internal integration at
   [notion.so/my-integrations](https://www.notion.so/my-integrations), copy its
   secret to `NOTION_TOKEN`, and share the page or database with it. Orbit reads
   from **either** source:
-  - **A database** - set `NOTION_DB_ID`. Each open row becomes an item; override
-    the property names with `ORBIT_NOTION_TITLE_PROP` / `ORBIT_NOTION_DATE_PROP`
-    if they differ from `Name` / `Due`.
+  - **A database** - set `NOTION_DB_ID`. Each row becomes an item. Its title,
+    date, and done columns (a checkbox or a status) are found by type, so any
+    database works; pin them by name with `ORBIT_NOTION_TITLE_PROP` /
+    `ORBIT_NOTION_DATE_PROP` if needed.
   - **A planning page** - set `NOTION_PAGE_ID` instead, and Orbit reads the
     page's structure (nested blocks included):
     - To-do checkboxes under a weekday heading (`Monday` ... `Sunday`, e.g. a
       column per day) become that day's work sessions in the current week;
       other to-dos become undated tasks. A checked box marks the item done.
-    - Lines like `Project: task one 9/24 5:30pm | task two (paused until Oct 2)`
-      split into one task per `|` part, titled with the project. Dates and
-      clock times become the due, and status such as `(paused ...)` or
-      `- done, one chore left` moves to the notes. The AI model judges each
-      line's shape - separate tasks, one task whose parts are its subtasks
-      (e.g. a study list), or not a to-do at all (a motto, a watch list) - and
-      its verdict is cached, so only new or edited lines are re-read.
-    - A note that restates a calendar event (same day, same name within an
-      hour) is dropped in favour of the calendar's copy.
-  - If both are set, `NOTION_PAGE_ID` takes precedence. Assign imported items to
-    an area with `ORBIT_NOTION_AREA` (default `coursework`), or set it to `auto`
-    to infer each item's area from its title.
+    - Every other line is read for to-dos, in whatever form it takes. With a
+      hosted model, the model reads each line whole - `Errands: pharmacy,
+      bank, and call the landlord` becomes three tasks - and its answer is
+      checked against the line: a title whose words are not in the line is
+      dropped, and only date words copied from the line become the due date
+      (parsed in code, never computed by the model).
+    - With the small local model, which misreads about 40% of lines read that
+      way, the line's explicit structure is split in code instead: `Project:
+      task one 9/24 5:30pm | task two (paused until Oct 2); task three` becomes
+      one task per `|` or `;` part, titled with the project. Dates and clock
+      times become the due, and status such as `(paused ...)` or `- done, one
+      chore left` moves to the notes. The model judges only each line's shape -
+      separate tasks, one task whose parts are its subtasks (a study list), or
+      not a to-do at all (a motto, a watch list).
+    - Either way the model's verdicts are cached, so only new or edited lines
+      are re-read. A note that restates a calendar event (same day, same name
+      within an hour) is dropped in favour of the calendar's copy.
+  - If both are set, `NOTION_PAGE_ID` takes precedence. Imported items are
+    filed by title, or all go to one area with `ORBIT_NOTION_AREA`.
+
+### How imports are filed
+
+Nothing in the code knows anyone's labs, companies, or courses. Each area in
+**Settings** has a hint - your note on what belongs there ("AIMS lab: papers,
+experiments", "IA for EECS 491: office hours, Piazza"); built-in areas start
+with a generic one. Each new title is filed by, in order:
+
+1. **Your own words** - a title you filed yourself, or a name in exactly one
+   area's hint (a course code, an acronym, a capitalized name like
+   `Old Mission`).
+2. **The model** - it reads your areas and hints, plus the items you filed
+   yourself that look most like the title. Its verdict is cached per title, and
+   editing any hint re-files everything on the next sync.
+3. **Without AI** - the same words, matched in code.
+
+Imported items follow the source on every sync, including their area, unless
+you moved one to another area by hand.
 
 Recurring calendar events are expanded into one item per occurrence (with
 exceptions, edited occurrences, and cancellations applied).
