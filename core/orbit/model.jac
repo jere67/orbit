@@ -33,13 +33,16 @@ enum Status: int {
 # The runtime-addable area registry. Each Area is a node under root; adding a
 # new area is spawning one node, so no enum and no schema change is ever needed
 # to introduce a new life domain. Items reference an area by its stable `key`.
+# `hint` is the person's own note on what belongs in the area ("AIMS lab, paper
+# reading"); the importer's classifier reads it, so filing is taught, not coded.
 node Area {
     has key: str,
         label: str,
         color: str = "#6366f1",
         icon: str = "",
         archived: bool = False,
-        created_at: str = "";
+        created_at: str = "",
+        hint: str = "";
 }
 
 # Everything a person tracks is one Item, differing only by fields. `area_key`

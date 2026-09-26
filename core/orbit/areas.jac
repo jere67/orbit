@@ -19,6 +19,19 @@ glob DEFAULT_AREAS: list[dict[str, str]] = [
     {"key": "other", "label": "Other", "color": "#64748b", "icon": "circle"}
 ];
 
+# What each built-in area means, until the person writes their own hint. Generic
+# on purpose: the specifics (a lab's name, a company) belong in the person's hint.
+glob DEFAULT_HINTS: dict[str, str] = {
+    "research": "Research-group work: experiments, papers, advisor meetings",
+    "jobs": "Job search: applications, online assessments, interviews, offers, recruiting prep",
+    "coursework": "Classes taken as a student: lectures, discussions, labs, homework, projects, exams",
+    "ta": "Teaching a course: office hours, grading, course staff meetings, answering students",
+    "clubs": "Student organizations and their meetings, events, and projects",
+    "fitness": "Workouts, sports, gym, martial arts",
+    "startup": "A company or side business being built",
+    "other": "Anything that fits no other area"
+};
+
 
 """Create the default areas once, if the registry is empty. Idempotent."""
 def ensure_seed -> None {
@@ -86,6 +99,24 @@ def:pub add_area(key: str, label: str, color: str = "#6366f1", icon: str = "") -
         icon=icon,
         created_at=now_iso()
     );
+}
+
+
+"""What belongs in an area: the person's own hint, else the built-in default."""
+def area_hint(a: Area) -> str {
+    return a.hint.strip() or DEFAULT_HINTS.get(a.key, "");
+}
+
+
+"""Set (or, with an empty string, clear back to the default) an area's hint -
+the person's note on what belongs in it, which the importer's classifier reads."""
+def:pub set_area_hint(key: str, hint: str) -> Area | None {
+    found = area_by_key(key);
+    if found is None {
+        return None;
+    }
+    found.hint = hint.strip();
+    return found;
 }
 
 

@@ -44,7 +44,7 @@ def status_from(s: str) -> Status {
 
 
 """Append an activity record for streaks and completion analytics."""
-def log_event(item: Item, event: str) -> None {
+def log_event(item: Item, event: str) {
     root ++> LogEntry(
         item_jid=jid(item),
         event=event,
@@ -204,7 +204,9 @@ def:pub set_status(id: str, status: str) -> Item | None {
 }
 
 
-"""Move an item to a different area (validated against the registry)."""
+"""Move an item to a different area (validated against the registry). The move
+is logged: a sync then leaves the item's area alone, and the importer learns
+from it as one of the person's own filings."""
 def:pub retag_item(id: str, area_key: str) -> Item | None {
     it = item_by_id(id);
     if it is None {
@@ -212,6 +214,7 @@ def:pub retag_item(id: str, area_key: str) -> Item | None {
     }
     if area_exists(area_key) {
         it.area_key = area_key;
+        log_event(it, "retagged");
     }
     return it;
 }
