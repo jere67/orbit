@@ -14,7 +14,7 @@ deterministic forms when no model is configured - identical to the web.
 import from "@jac/mobui" { View, Text, Pressable, TextInput, ScrollView, StyleSheet, Dimensions }
 import from .icon { Icon }
 import from core.orbit.items { list_items, add_item, complete_item, set_status, delete_item }
-import from core.orbit.areas { list_areas, add_area, archive_area }
+import from core.orbit.areas { list_areas, add_area, archive_area, set_area_hint, default_area_hints }
 import from core.orbit.ai { capture, fast_briefing }
 import from core.orbit.analytics { get_analytics }
 import from core.orbit.assistant { quick_dayplan, day_at_a_glance, quick_suggestions, suggestions, weekly_overview, ask }
@@ -191,7 +191,10 @@ glob styles = StyleSheet.create({
     "connMeta": {"color": "#8a8073", "fontSize": 12, "marginLeft": "auto"},
     "syncNote": {"flexDirection": "row", "alignItems": "center", "gap": 6},
     "syncNoteText": {"color": "#ff5c45", "fontSize": 12, "flex": 1},
-    "areaMgmtRow": {"flexDirection": "row", "alignItems": "center", "gap": 10, "backgroundColor": "#ffffff", "borderRadius": 12, "borderWidth": 1, "borderColor": "#e4dccf", "padding": 12},
+    "areaMgmtCard": {"backgroundColor": "#ffffff", "borderRadius": 12, "borderWidth": 1, "borderColor": "#e4dccf", "padding": 12, "gap": 10},
+    "areaMgmtRow": {"flexDirection": "row", "alignItems": "center", "gap": 10},
+    "areaHintInput": {"color": "#24201b", "fontSize": 12, "borderWidth": 1, "borderColor": "#e4dccf", "borderRadius": 8, "paddingVertical": 7, "paddingHorizontal": 10},
+    "areaHintNote": {"color": "#8a8073", "fontSize": 12, "lineHeight": 17, "paddingHorizontal": 2},
     "areaMgmtName": {"color": "#24201b", "fontSize": 14, "fontWeight": "600", "flex": 1},
     "smallBtn": {"backgroundColor": "#f1ebe0", "borderRadius": 8, "paddingVertical": 6, "paddingHorizontal": 10},
     "smallBtnText": {"color": "#ff5c45", "fontSize": 12, "fontWeight": "700"},
@@ -233,6 +236,7 @@ def:pub app -> JsxElement {
         new_title: str = "",
         new_area: str = "research",
         new_area_label: str = "",
+        hint_defaults: dict[str, str] = {},
         dayplan: DayPlan | None = None,
         dayplan_busy: bool = False,
         suggestions_list: list = [],
@@ -249,6 +253,7 @@ def:pub app -> JsxElement {
     async def reload {
         items = await list_items();
         areas = await list_areas();
+        hint_defaults = await default_area_hints();
         brief = await fast_briefing();
         analytics = await get_analytics();
         connectors = await connector_status();
@@ -319,6 +324,23 @@ def:pub app -> JsxElement {
         await add_area(key=label.lower().replace(" ", "-"), label=label);
         new_area_label = "";
         await reload();
+    }
+
+    def edit_hint(key: str, value: str) {
+        for a in areas {
+            if a.key == key {
+                a.hint = value;
+            }
+        }
+        areas = [x for x in areas];
+    }
+
+    async def save_hint(key: str) {
+        for a in areas {
+            if a.key == key {
+                await set_area_hint(key=key, hint=a.hint);
+            }
+        }
     }
 
     async def do_archive_area(key: str) {
@@ -771,16 +793,29 @@ def:pub app -> JsxElement {
                     </View>
                 </View>
 
+                <Text style={styles["areaHintNote"]}>
+                    Each area's note tells Orbit where imported events and notes belong. Name what only you know - a lab, a startup, your course codes.
+                </Text>
+
                 {[
-                    <View key={a.key} style={styles["areaMgmtRow"]}>
-                        <View style={[styles["areaDotMd"], {"backgroundColor": a.color}]} />
-                        <Text style={styles["areaMgmtName"]}>{a.label}</Text>
-                        {(<Pressable style={styles["smallBtn"]} onPress={lambda { do_unarchive_area(a.key); }}>
-                            <Text style={styles["smallBtnText"]}>Unarchive</Text>
-                        </Pressable>) if a.archived else
-                            <Pressable style={styles["smallBtn"]} onPress={lambda { do_archive_area(a.key); }}>
-                                <Text style={styles["smallBtnText"]}>Archive</Text>
-                            </Pressable>}
+                    <View key={a.key} style={[styles["areaMgmtCard"], {"opacity": 0.55 if a.archived else 1}]}>
+                        <View style={styles["areaMgmtRow"]}>
+                            <View style={[styles["areaDotMd"], {"backgroundColor": a.color}]} />
+                            <Text style={styles["areaMgmtName"]}>{a.label}</Text>
+                            {(<Pressable style={styles["smallBtn"]} onPress={lambda { do_unarchive_area(a.key); }}>
+                                <Text style={styles["smallBtnText"]}>Unarchive</Text>
+                            </Pressable>) if a.archived else
+                                <Pressable style={styles["smallBtn"]} onPress={lambda { do_archive_area(a.key); }}>
+                                    <Text style={styles["smallBtnText"]}>Archive</Text>
+                                </Pressable>}
+                        </View>
+                        {<View /> if a.archived else
+                            <TextInput style={styles["areaHintInput"]} value={a.hint}
+                                placeholder={hint_defaults[a.key] or "What belongs here? e.g. a lab, a company, course codes"}
+                                placeholderTextColor="#8a8073"
+                                onChangeText={lambda (t: str) { edit_hint(a.key, t); }}
+                                onBlur={lambda { save_hint(a.key); }}
+                                onSubmitEditing={lambda { save_hint(a.key); }} />}
                     </View>
                     for a in areas
                 ]}

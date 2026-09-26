@@ -39,7 +39,7 @@ import from core.orbit.items {
     list_items, add_item, complete_item, set_status, delete_item,
     list_subtasks, add_subtask, toggle_subtask
 }
-import from core.orbit.areas { list_areas, add_area, archive_area, update_area }
+import from core.orbit.areas { list_areas, add_area, archive_area, update_area, set_area_hint, default_area_hints }
 import from core.orbit.ai { capture, breakdown_item, fast_briefing, smart_briefing }
 import from core.orbit.analytics { get_analytics }
 import from core.orbit.assistant {
@@ -99,6 +99,7 @@ def:pub app -> JsxElement {
         new_due: str = "",
         new_priority: str = "MED",
         new_area_label: str = "",
+        hint_defaults: dict[str, str] = {},
         expanded: str = "",
         expanded_subs: list = [],
         new_subtask: str = "",
@@ -124,6 +125,7 @@ def:pub app -> JsxElement {
     async def reload {
         items = await list_items();
         areas = await list_areas();
+        hint_defaults = await default_area_hints();
         brief = await fast_briefing();
         analytics = await get_analytics();
         connectors = await connector_status();
@@ -175,6 +177,23 @@ def:pub app -> JsxElement {
         }
         areas = [x for x in areas];
         await update_area(key=key, color=color);
+    }
+
+    def edit_hint(key: str, value: str) {
+        for a in areas {
+            if a.key == key {
+                a.hint = value;
+            }
+        }
+        areas = [x for x in areas];
+    }
+
+    async def save_hint(key: str) {
+        for a in areas {
+            if a.key == key {
+                await set_area_hint(key=key, hint=a.hint);
+            }
+        }
     }
 
     async def do_preview {
@@ -1107,10 +1126,15 @@ def:pub app -> JsxElement {
                             </Button>
                         </div>
 
+                        <p className="px-1 text-xs leading-relaxed text-muted-foreground">
+                            Each area's note tells Orbit where imported events and notes belong. Name what only you know - a lab, a startup, your course codes.
+                        </p>
+
                         <div className="space-y-2.5">
                             {[
                                 <div key={a.key}
-                                     className={"flex items-center gap-3 rounded-xl border border-border bg-card p-3.5 " + ("opacity-55" if a.archived else "")}>
+                                     className={"rounded-xl border border-border bg-card p-3.5 " + ("opacity-55" if a.archived else "")}>
+                                    <div className="flex items-center gap-3">
                                     <label className="relative size-5 shrink-0 cursor-pointer rounded-full ring-1 ring-black/10"
                                            title="Change color" style={{"background": a.color}}>
                                         <input type="color" value={a.color}
@@ -1129,6 +1153,14 @@ def:pub app -> JsxElement {
                                                 onClick={lambda (e: MouseEvent) { do_archive_area(a.key); }}>
                                             <HugeiconsIcon icon={Archive02Icon} strokeWidth={2} className="size-4" />
                                         </Button>}
+                                    </div>
+                                    {not a.archived and
+                                        <Input className="mt-2.5 h-8 text-xs" value={a.hint}
+                                               aria-label={"What belongs in " + a.label}
+                                               placeholder={hint_defaults[a.key] or "What belongs here? e.g. a lab, a company, course codes"}
+                                               onChange={lambda (e: ChangeEvent) { edit_hint(a.key, e.target.value); }}
+                                               onBlur={lambda (e: FocusEvent) { save_hint(a.key); }}
+                                               onKeyPress={lambda (e: KeyboardEvent) { if e.key == "Enter" { save_hint(a.key); } }} />}
                                 </div> for a in areas
                             ]}
                         </div>

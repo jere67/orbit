@@ -108,6 +108,13 @@ def area_hint(a: Area) -> str {
 }
 
 
+"""The built-in hint of each default area, shown as the placeholder of an area
+the person has not described yet."""
+def:pub default_area_hints -> dict[str, str] {
+    return DEFAULT_HINTS;
+}
+
+
 """Set (or, with an empty string, clear back to the default) an area's hint -
 the person's note on what belongs in it, which the importer's classifier reads."""
 def:pub set_area_hint(key: str, hint: str) -> Area | None {
