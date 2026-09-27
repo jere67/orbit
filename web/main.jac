@@ -147,6 +147,9 @@ def:pub app -> JsxElement {
     }
 
     async can with entry {
+        # The dev server's generated index.html hardcodes "Jac App (Dev)" and
+        # ignores [client.app_meta_data]; set the title here so dev matches prod.
+        globalThis.document.title = "Orbit";
         await reload();
         await auto_sync();
         await load_ai();
