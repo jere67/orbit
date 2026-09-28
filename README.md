@@ -26,6 +26,8 @@ The same backend powers four surfaces (plus a bonus fifth): a **web app**, a
   **Slipping** list of overdue items.
 - **One unified stream** - research, jobs, coursework, TA, clubs, fitness, and
   any area you invent are all just items in one graph, filtered and color-coded.
+- **Grouped by topic** - items about the same course, project, or company collapse into one row, like `EECS 482 | LEC | P1`.
+  The model decides what belongs together; nothing is hardcoded.
 - **Runtime-addable areas** - create, rename, or archive areas from the web
   Settings panel, the CLI, or an AI capture. No code changes, ever.
 - **A planner that thinks** - the assistant layer goes well beyond a to-do list:
@@ -90,8 +92,10 @@ and Notion (see below) and click **Sync now** to pull in your real schedule.
 The web app's tabs:
 
 - **Briefing** - today's plan, this week, slipping, and overload flags.
+  The week board joins each day's items on one topic into a single row (`EECS 482 | LEC | P1`).
 - **Chat** - ask Orbit about your week, your deadlines, or what to do first.
 - **Agenda** - every item, add/complete/delete, filterable by area.
+  Items on one topic share a card (`Sessions · Sep 28, Oct 2–4 | P1 · Sep 29–Oct 1`); the count on the right opens the individual items.
 - **Insight** - streaks, completion, area load, and the deadline density chart.
 - **Settings** - connectors, plus add/rename/archive areas at runtime.
 
@@ -244,6 +248,21 @@ with a generic one. Each new title is filed by, in order:
 
 Imported items follow the source on every sync, including their area, unless
 you moved one to another area by hand.
+
+### How items are grouped
+
+Nothing in the code knows which of your items belong together.
+Code only proposes candidates from the shape of the titles: leading words several titles share (`EECS`, `EECS 482`), and names spelled almost the same way.
+The model then answers one small question per candidate.
+Do `EECS 449` and `EECS 482` belong to the same thing? No, so `EECS` is too broad.
+Do `EECS 482` and `EECS 482 - P1`? Yes, so `EECS 482` is a topic and `P1` is its part.
+Is `Chme 101` a typo of `Chem 101`?
+A small local model answers such a pairwise question far more reliably than "is this whole list one subject?".
+Each verdict is voted, cached in the graph, and asked a few at a time, so the first pass refines the view over a minute or so without holding up the app, and later loads are instant.
+Without AI, a title that is exactly the shared words (`AIMS` for `AIMS Meeting`) or a separator after them (`Recruiting: ...`) still groups.
+
+On the week board, clicking a row's checkbox completes the whole group, and clicking one part completes just that item.
+On the Agenda, clicking a part completes its next open item, so one click finishes today's session rather than the whole week.
 
 Recurring calendar events are expanded into one item per occurrence (with
 exceptions, edited occurrences, and cancellations applied).
