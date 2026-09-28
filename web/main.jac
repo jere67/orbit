@@ -21,7 +21,7 @@ import from "@hugeicons/core-free-icons" {
     AnalyticsUpIcon, Settings02Icon, Add01Icon, ArrowRight01Icon, Alert02Icon,
     MoreHorizontalIcon, Delete02Icon, Tick02Icon, Fire02Icon, RefreshIcon,
     Link01Icon, Archive02Icon, Target02Icon, InboxIcon, BubbleChatIcon,
-    FilterIcon, SentIcon, SidebarLeft01Icon
+    FilterIcon, SentIcon, SidebarLeft01Icon, ArrowDown01Icon
 }
 
 import from ..components.ui.button { Button }
@@ -34,6 +34,7 @@ import from ..components.ui.dropdown_menu {
 }
 import from ..components.ui.progress { Progress }
 import from ..components.ui.skeleton { Skeleton }
+import from ..lib.dates { short_date, date_runs }
 
 import from core.orbit.items {
     list_items, add_item, complete_item, set_status, delete_item,
@@ -47,10 +48,8 @@ import from core.orbit.assistant {
 }
 import from core.orbit.connectors { connector_status, sync_connectors, preview_connectors }
 import from core.orbit.config { ai_status }
-import from core.orbit.model { Item, Area, Priority, Status, ItemKind, Briefing, Analytics, DayPlan, WeekOutlook, DayBucket, DensityDay, ConnectorPreview }
-
-
-glob MONTHS: list = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+import from core.orbit.topics { title_topics }
+import from core.orbit.model { Item, Area, Priority, Status, ItemKind, Briefing, Analytics, DayPlan, WeekOutlook, DayBucket, DensityDay, ConnectorPreview, TitleTopic }
 
 
 def prio_label(p: Priority) -> str {
@@ -66,23 +65,6 @@ def kind_label(k: ItemKind) -> str {
     if k == ItemKind.EVENT { return "Event"; }
     if k == ItemKind.SESSION { return "Session"; }
     return "Task";
-}
-
-
-"""Format an ISO date ('2026-09-15') as a warm short label ('Sep 15')."""
-def short_date(iso: str) -> str {
-    if not iso or len(iso) < 10 {
-        return "";
-    }
-    mi = int(iso[5:7]) - 1;
-    if mi < 0 or mi > 11 {
-        return iso[:10];
-    }
-    day = iso[8:10];
-    if day.startswith("0") {
-        day = day[1:];
-    }
-    return MONTHS[mi] + " " + day;
 }
 
 
@@ -120,10 +102,13 @@ def:pub app -> JsxElement {
         filter_priority: str = "all",
         hovered_density: str = "",
         ai_state: str = "off",
-        sidebar_open: bool = True;
+        sidebar_open: bool = True,
+        topics: dict[str, TitleTopic] = {},
+        open_topics: list = [];
 
     async def reload {
         items = await list_items();
+        await load_topics(False);
         areas = await list_areas();
         hint_defaults = await default_area_hints();
         brief = await fast_briefing();
@@ -146,12 +131,30 @@ def:pub app -> JsxElement {
         await reload();
     }
 
+    """Map each title to its topic from cached verdicts. With `ask_model`, keep
+    asking the model a few new questions per call - re-grouping after each -
+    until it has none left."""
+    async def load_topics(ask_model: bool) {
+        while True {
+            result = await title_topics(ask_model);
+            by_title: dict[str, TitleTopic] = {};
+            for r in result.topics {
+                by_title[r.title] = r;
+            }
+            topics = by_title;
+            if not result.pending {
+                break;
+            }
+        }
+    }
+
     async can with entry {
         # The dev server's generated index.html hardcodes "Jac App (Dev)" and
         # ignores [client.app_meta_data]; set the title here so dev matches prod.
         globalThis.document.title = "Orbit";
         await reload();
         await auto_sync();
+        await load_topics(True);
         await load_ai();
     }
 
@@ -223,6 +226,7 @@ def:pub app -> JsxElement {
         }
         sync_summary = ("Synced — " + "  ·  ".join(parts)) if parts else "No connectors configured yet.";
         await reload();
+        await load_topics(True);
     }
 
     async def load_outlook {
@@ -248,6 +252,21 @@ def:pub app -> JsxElement {
             await set_status(id, "TODO");
         } else {
             await complete_item(id);
+        }
+        await reload();
+    }
+
+    """Complete every open item in `open_ids`; when there are none, reopen
+    every item in `done_ids` (so a group's checkbox toggles the whole group)."""
+    async def do_toggle_many(open_ids: list, done_ids: list) {
+        if len(open_ids) > 0 {
+            for id in open_ids {
+                await complete_item(id);
+            }
+        } else {
+            for id in done_ids {
+                await set_status(id, "TODO");
+            }
         }
         await reload();
     }
@@ -336,6 +355,11 @@ def:pub app -> JsxElement {
             }
         }
         return None;
+    }
+
+    def area_label(key: str) -> str {
+        a = area_for(key);
+        return a.label if a is not None else key;
     }
 
     def area_color(key: str) -> str {
@@ -488,6 +512,199 @@ def:pub app -> JsxElement {
         return is_scheduled and it.due != "" and it.due[:10] < today;
     }
 
+    def topic_of(it: Item) -> str {
+        return topics[it.title].topic if it.title in topics else it.title;
+    }
+
+    def part_of(it: Item) -> str {
+        return topics[it.title].part if it.title in topics else "";
+    }
+
+    def is_done(it: Item) -> bool {
+        return it.status == Status.DONE or it.status == Status.SKIPPED;
+    }
+
+    """Items grouped by topic, each group where its topic first appears."""
+    def by_topic(xs: list) -> list {
+        groups = [];
+        index = {};
+        for it in xs {
+            t = topic_of(it);
+            if t in index {
+                groups[index[t]]["items"].append(it);
+            } else {
+                index[t] = len(groups);
+                groups.append({"topic": t, "items": [it]});
+            }
+        }
+        return groups;
+    }
+
+    def toggle_topic(t: str) {
+        if t in open_topics {
+            open_topics = [x for x in open_topics if x != t];
+        } else {
+            open_topics = open_topics + [t];
+        }
+    }
+
+    """Separate rendered segments with a quiet '|'. A no-break space keeps each
+    bar on the line of the piece before it, so a row wraps after a bar."""
+    def joined(nodes: list) -> list {
+        out = [];
+        i = 0;
+        for n in nodes {
+            if i > 0 {
+                out.append(<span key={"sep" + str(i)} className="text-muted-foreground/45">{"\u00a0| "}</span>);
+            }
+            out.append(n);
+            i += 1;
+        }
+        return out;
+    }
+
+    """One piece of a joined row: completes its open items, or reopens them
+    all when none are open. A span rather than a <button> so the row wraps
+    like text between words, not around whole pieces."""
+    def piece(key: str, label: str, members: list, settled: any) -> JsxElement {
+        open_ids = [jid(it) for it in members if not settled(it)];
+        done = len(open_ids) == 0;
+        return
+            <span key={key} role="button" tabIndex={0}
+                  onClick={lambda (e: MouseEvent) { do_toggle_many(open_ids, [jid(it) for it in members]); }}
+                  onKeyDown={lambda (e: KeyboardEvent) { if e.key == "Enter" or e.key == " " { e.preventDefault(); do_toggle_many(open_ids, [jid(it) for it in members]); } }}
+                  title={label + (" (done - click to reopen)" if done else " (click to complete)")}
+                  className={"cursor-pointer rounded-sm transition-colors hover:text-primary " + ("text-muted-foreground line-through" if done else "text-foreground")}>
+                {label}
+            </span>;
+    }
+
+    """A week-board row for several items on one topic: 'EECS 482 | LEC | P1'.
+    The checkbox toggles them all; each piece toggles its own item."""
+    def render_topic_chip(topic: str, members: list) -> JsxElement {
+        bare = [it for it in members if part_of(it) == ""];
+        parts = [it for it in members if part_of(it) != ""];
+        open_items = [it for it in members if not is_settled(it)];
+        done = len(open_items) == 0;
+        color = area_color((open_items[0] if len(open_items) > 0 else members[0]).area_key);
+        head = piece("head", topic, bare, is_settled) if len(bare) > 0 else
+            <span key="head" className={"text-muted-foreground line-through" if done else "text-foreground"}>{topic}</span>;
+        return
+            <div key={"topic:" + topic}
+                 className="flex w-full items-start gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-[color-mix(in_oklab,var(--foreground)_6%,transparent)]">
+                <button onClick={lambda (e: MouseEvent) { do_toggle_many([jid(it) for it in open_items], [jid(it) for it in members]); }}
+                        title={topic + (" (all done - click to reopen)" if done else " (click to complete all)")}
+                        className="mt-px flex size-4 shrink-0 items-center justify-center rounded-[5px] border-2 transition-colors"
+                        style={{"borderColor": color, "background": color if done else "transparent"}}>
+                    {done and <HugeiconsIcon icon={Tick02Icon} strokeWidth={3} className="size-2.5 text-white" />}
+                </button>
+                <span className="min-w-0 flex-1 break-words text-[0.82rem] leading-snug">
+                    {joined([head] + [piece(jid(it), part_of(it), [it], is_settled) for it in parts])}
+                </span>
+            </div>;
+    }
+
+    def render_week_group(g: dict) -> JsxElement {
+        if len(g["items"]) == 1 {
+            return render_chip(g["items"][0]);
+        }
+        return render_topic_chip(g["topic"], g["items"]);
+    }
+
+    """A topic's items as one piece per distinct part - items with no part of
+    their own are labelled by kind - each with its dates: 'P1 · Sep 29–Oct 1'."""
+    def agenda_pieces(members: list) -> list {
+        segs = [];
+        index = {};
+        for it in members {
+            p = part_of(it);
+            key = p if p else "kind:" + str(it.kind);
+            if key in index {
+                segs[index[key]]["items"].append(it);
+            } else {
+                index[key] = len(segs);
+                segs.append({"part": p, "items": [it]});
+            }
+        }
+        out = [];
+        i = 0;
+        for seg in segs {
+            its = seg["items"];
+            label = seg["part"] if seg["part"] else kind_label(its[0].kind) + ("s" if len(its) > 1 else "");
+            open_its = [it for it in its if not is_done(it)];
+            dates = date_runs([it.due for it in its]);
+            # One click finishes the next open item, not every day at once.
+            out.append(
+                <span key={"seg" + str(i)}>
+                    {piece("p", label, open_its[:1] if len(open_its) > 0 else its, is_done)}
+                    {dates and <span className="text-muted-foreground"> · {dates}</span>}
+                </span>
+            );
+            i += 1;
+        }
+        return joined(out);
+    }
+
+    """An agenda card for several items on one topic. The checkbox toggles
+    them all; the count opens the individual items with their full menus."""
+    def render_topic_card(topic: str, members: list) -> JsxElement {
+        open_items = [it for it in members if not is_done(it)];
+        done = len(open_items) == 0;
+        color = area_color((open_items[0] if len(open_items) > 0 else members[0]).area_key);
+        area_keys = [];
+        for it in members {
+            if it.area_key not in area_keys {
+                area_keys.append(it.area_key);
+            }
+        }
+        is_open = topic in open_topics;
+        return
+            <div key={"topic:" + topic}>
+                <div className="group flex items-start gap-3 rounded-xl border border-border bg-card p-3.5 shadow-[0_1px_2px_rgba(36,32,27,0.04)] transition-colors hover:border-[color-mix(in_oklab,var(--foreground)_18%,transparent)]">
+                    <button
+                        onClick={lambda (e: MouseEvent) { do_toggle_many([jid(it) for it in open_items], [jid(it) for it in members]); }}
+                        title={"Reopen all" if done else "Complete all"}
+                        className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-transform hover:scale-110"
+                        style={{"borderColor": color, "background": color if done else "transparent"}}>
+                        {done and <HugeiconsIcon icon={Tick02Icon} strokeWidth={3} className="size-3 text-white" />}
+                    </button>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            {[
+                                <span key={k} className="rounded-full px-2 py-0.5 text-xs font-medium"
+                                      style={{"background": area_color(k) + "1f", "color": area_color(k)}}>
+                                    {area_label(k)}
+                                </span> for k in area_keys
+                            ]}
+                            <span className={"truncate text-[0.95rem] " + ("text-muted-foreground line-through" if done else "text-foreground")}>
+                                {topic}
+                            </span>
+                        </div>
+                        <div className="mt-1.5 text-[0.82rem] leading-relaxed">
+                            {agenda_pieces(members)}
+                        </div>
+                    </div>
+                    <button onClick={lambda (e: MouseEvent) { toggle_topic(topic); }}
+                            title={"Hide items" if is_open else "Show each item"}
+                            className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+                        {str(len(members))}
+                        <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={2} className={"size-3.5 transition-transform " + ("rotate-180" if is_open else "")} />
+                    </button>
+                </div>
+                {is_open and
+                    <div className="mt-2 ml-5 space-y-2 border-l-2 border-border pl-3">
+                        {[render_item(it) for it in members]}
+                    </div>}
+            </div>;
+    }
+
+    def render_agenda_group(g: dict) -> JsxElement {
+        if len(g["items"]) == 1 {
+            return render_item(g["items"][0]);
+        }
+        return render_topic_card(g["topic"], g["items"]);
+    }
+
     def render_chip(it: Item) -> JsxElement {
         color = area_color(it.area_key);
         done = is_settled(it);
@@ -523,7 +740,7 @@ def:pub app -> JsxElement {
                 <div className="flex flex-col gap-0.5">
                     {len(b.items) == 0 and
                         <div className="px-1.5 py-1 text-xs text-muted-foreground/40">No tasks</div>}
-                    {[render_chip(it) for it in b.items]}
+                    {[render_week_group(g) for g in by_topic(b.items)]}
                 </div>
                 {open_count > 0 and
                     <div className="mt-2 px-1.5 text-[0.65rem] text-muted-foreground">{open_count} open · {b.effort_min} min</div>}
@@ -970,7 +1187,7 @@ def:pub app -> JsxElement {
                                 </div>}
                             {len(items) > 0 and len(agenda_items()) == 0 and
                                 <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No items match these filters.</p>}
-                            {[render_item(it) for it in agenda_items()]}
+                            {[render_agenda_group(g) for g in by_topic(agenda_items())]}
                         </div>
                     </div>
                 }
