@@ -249,7 +249,16 @@ with a generic one. Each new title is filed by, in order:
 Imported items follow the source on every sync, including their area, unless
 you moved one to another area by hand.
 
-### How items are grouped
+Recurring calendar events are expanded into one item per occurrence (with
+exceptions, edited occurrences, and cancellations applied).
+
+Re-syncing updates imported items in place (keyed by source + external id)
+rather than duplicating them, and removes open items the source no longer has
+(a cancelled event, an edited or split note). Completed items are kept.
+
+---
+
+## How items are grouped by topic
 
 Nothing in the code knows which of your items belong together, and nothing about how you write titles is hardcoded - a topic can sit anywhere in a title and be set off by any punctuation, or none.
 Code only proposes candidates: runs of words that several titles share anywhere (`Chem`, `Chem 101`), and runs spelled almost the same way.
@@ -266,13 +275,6 @@ Without AI, a title that is exactly the shared words (`Chem 101` for `Chem 101 L
 On the week board, clicking a row's checkbox completes the whole group, and clicking one part completes just that item.
 On the Agenda, clicking a part completes its next open item, so one click finishes today's session rather than the whole week.
 
-Recurring calendar events are expanded into one item per occurrence (with
-exceptions, edited occurrences, and cancellations applied).
-
-Re-syncing updates imported items in place (keyed by source + external id)
-rather than duplicating them, and removes open items the source no longer has
-(a cancelled event, an edited or split note). Completed items are kept.
-
 ---
 
 ## How the components fit together, and what makes it impressive
@@ -288,6 +290,9 @@ All four surfaces are thin clients over **one shared core** (`core/orbit/`):
 - `assistant.jac` - day-at-a-glance, weekly overview, suggestions, and the
   agentic `ask` (byLLM tool-calling over the graph).
 - `connectors.jac` - the Google Calendar / Notion ingestion.
+- `topics.jac` - which items share a topic, judged by the model and cached, for the grouped week board and agenda.
+
+The web and mobile apps also share `lib/dates.jac` for date labels such as `Sep 28, Oct 2–4`.
 
 The **web app** and its server come up with a single `jac run`. The **CLI** and
 **mobile** and **desktop** apps all reach the same endpoints, so the planning
@@ -300,6 +305,8 @@ What makes Orbit stand out:
   slipping list - is the centerpiece.
 - **Runtime-extensible.** Areas are data, not code; you shape the app to your
   life without touching a source file.
+- **Grouping without hardcoding.** Related items collapse into one row per topic, and the code knows nothing about your courses or how you write titles.
+  A small local model makes every call through narrow, cached questions it answers reliably.
 - **Genuinely agentic AI.** "Ask Orbit" uses byLLM ReAct **tool-calling** to
   read your real items before answering, and the day plan is reasoned, not
   templated - yet every feature degrades to deterministic logic with no model,
