@@ -527,57 +527,97 @@ def _no_verdict(_first: str, _second: str) -> str {
     return "";
 }
 
+"""A stand-in for the model's verdict on shared words: the listed ones are
+general words, everything else a specific name."""
+def _labels(general: list[str]) -> Callable[[str, list[str]], str] {
+    return lambda (label: str, _items: list[str]) -> str {
+        return "GENERAL_WORD" if label in general else "SPECIFIC_NAME";
+    };
+}
+
+def _no_label(_label: str, _items: list[str]) -> str {
+    return "";
+}
+
 def _topics_of(rows: list[TitleTopic]) -> dict[str, list[str]] {
     return {r.title: [r.topic, r.part] for r in rows};
 }
 
 test "titles join the broadest candidate whose items the model keeps together" {
     rows = _topic_map(
-        ["EECS 482", "EECS 482 - P1", "EECS 482 - LEC", "EECS 449", "EECS 449: Assignment 1", "Buy milk"],
-        _groups(["EECS 449|EECS 482"]),
+        ["Chem 101", "Chem 101 - Quiz", "Chem 101 - Lab", "Chem 240", "Chem 240: Exam 1", "Buy milk"],
+        _groups(["Chem 101|Chem 240"]),
+        _labels([]),
         _no_verdict
     );
     got = _topics_of(rows);
-    assert got["EECS 482 - P1"] == ["EECS 482", "P1"];
-    assert got["EECS 482 - LEC"] == ["EECS 482", "LEC"];
-    assert got["EECS 482"] == ["EECS 482", ""];
-    assert got["EECS 449: Assignment 1"] == ["EECS 449", "Assignment 1"];
+    assert got["Chem 101 - Quiz"] == ["Chem 101", "Quiz"];
+    assert got["Chem 101 - Lab"] == ["Chem 101", "Lab"];
+    assert got["Chem 101"] == ["Chem 101", ""];
+    assert got["Chem 240: Exam 1"] == ["Chem 240", "Exam 1"];
     assert got["Buy milk"] == ["Buy milk", ""];
 }
 
+test "a topic can sit anywhere in a title and be set off by any punctuation" {
+    got = _topics_of(_topic_map(
+        ["Chem 101", "Lab for Chem 101", "(TA) Chem 101 - Office Hours", "Chem 101 (Quiz)", "Chem 101 → Problem Set", "Chem 101: Exam", "(Chem 101 Review)"],
+        _groups([]),
+        _no_label,
+        _no_verdict
+    ));
+    assert got["Lab for Chem 101"] == ["Chem 101", "Lab for"];
+    assert got["(TA) Chem 101 - Office Hours"] == ["Chem 101", "(TA) - Office Hours"];
+    assert got["Chem 101 (Quiz)"] == ["Chem 101", "Quiz"];
+    assert got["Chem 101 → Problem Set"] == ["Chem 101", "Problem Set"];
+    assert got["Chem 101: Exam"] == ["Chem 101", "Exam"];
+    assert got["(Chem 101 Review)"] == ["Chem 101", "Review"];
+}
+
+test "a single shared word inside titles must be a specific name, not a general word" {
+    titles = ["Chem 101 - Staff Meeting", "Book club - Meeting", "Pay Rent", "Rent Due"];
+    got = _topics_of(_topic_map(titles, _groups([]), _labels(["Meeting"]), _no_verdict));
+    assert got["Book club - Meeting"] == ["Book club - Meeting", ""];
+    assert got["Pay Rent"] == ["Rent", "Pay"];
+    none = _topics_of(_topic_map(titles, _groups([]), _no_label, _no_verdict));
+    assert none["Pay Rent"] == ["Pay Rent", ""];
+}
+
 test "the model can keep a shared word from grouping unrelated items" {
-    titles = ["Call mom", "Call the bank"];
-    split = _topics_of(_topic_map(titles, _groups(["Call mom|Call the bank"]), _no_verdict));
+    titles = ["Call mom", "Call the bank", "Chem 101 - Lab", "Bio 110 - Lab"];
+    split = _topics_of(_topic_map(titles, _groups(["Call mom|Call the bank"]), _labels(["Lab"]), _no_verdict));
     assert split["Call mom"] == ["Call mom", ""];
-    joined = _topics_of(_topic_map(titles, _groups([]), _no_verdict));
+    assert split["Chem 101 - Lab"] == ["Chem 101 - Lab", ""];
+    joined = _topics_of(_topic_map(titles, _groups([]), _labels([]), _no_verdict));
     assert joined["Call mom"] == ["Call", "mom"];
 }
 
-test "without a verdict, structure decides: an exact title or a separator" {
+test "without a verdict, structure decides: an exact title, or leading words set off by punctuation" {
     got = _topics_of(_topic_map(
-        ["AIMS", "AIMS Meeting", "AIMS: Social Media - deployment", "Recruiting: Acme OA", "Recruiting - Globex call", "EECS 482", "EECS 449"],
+        ["Book club", "Book club Meeting", "Book club: pick - next", "Recruiting → Acme OA", "Recruiting • Globex call", "Chem 101", "Chem 240", "Lab for Chem 240"],
         _no_verdict,
+        _no_label,
         _no_verdict
     ));
-    assert got["AIMS Meeting"] == ["AIMS", "Meeting"];
-    assert got["AIMS: Social Media - deployment"] == ["AIMS", "Social Media - deployment"];
-    assert got["Recruiting - Globex call"] == ["Recruiting", "Globex call"];
-    assert got["EECS 482"] == ["EECS 482", ""];
+    assert got["Book club Meeting"] == ["Book club", "Meeting"];
+    assert got["Book club: pick - next"] == ["Book club", "pick - next"];
+    assert got["Recruiting • Globex call"] == ["Recruiting", "Globex call"];
+    assert got["Chem 101"] == ["Chem 101", ""];
+    assert got["Lab for Chem 240"] == ["Chem 240", "Lab for"];
 }
 
 test "a near-identical name joins its topic only when the model says it is the same" {
     titles = ["Chem 101", "Chem 101 - Lab", "Chme 101 - Quiz", "Chem 102 - Lab"];
     same = lambda (_name: str, other: str) -> str { return "SAME_NAME" if other == "Chme 101" else "DIFFERENT_NAMES"; };
-    got = _topics_of(_topic_map(titles, _no_verdict, same));
+    got = _topics_of(_topic_map(titles, _no_verdict, _no_label, same));
     assert got["Chme 101 - Quiz"] == ["Chem 101", "Quiz"];
     assert got["Chem 102 - Lab"] == ["Chem 102 - Lab", ""];
-    assert _topics_of(_topic_map(titles, _no_verdict, _no_verdict))["Chme 101 - Quiz"] == ["Chme 101 - Quiz", ""];
+    assert _topics_of(_topic_map(titles, _no_verdict, _no_label, _no_verdict))["Chme 101 - Quiz"] == ["Chme 101 - Quiz", ""];
 }
 
 test "the model is only asked about the broadest candidates it needs" {
     asked: list[str] = [];
     grouped = lambda (a: str, b: str) -> str { asked.append(a + " / " + b); return "SAME_GROUP"; };
-    got = _topics_of(_topic_map(["Recruiting: Acme OA", "Recruiting: Acme call", "Recruiting: Globex"], grouped, _no_verdict));
+    got = _topics_of(_topic_map(["Recruiting: Acme OA", "Recruiting: Acme call", "Recruiting: Globex"], grouped, _no_label, _no_verdict));
     assert asked == ["Recruiting: Acme / Recruiting: Globex"];
     assert got["Recruiting: Acme OA"] == ["Recruiting", "Acme OA"];
 }
