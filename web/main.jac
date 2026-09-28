@@ -732,7 +732,7 @@ def:pub app -> JsxElement {
         open_count = len([it for it in b.items if not is_settled(it)]);
         return
             <div key={b.date}
-                 className={"flex min-w-[8.5rem] flex-1 flex-col rounded-xl px-1 pt-1 pb-2 " + ("bg-primary/[0.06]" if is_today else "")}>
+                 className={"flex min-w-[8rem] flex-1 flex-col rounded-xl px-1 pt-1 pb-2 " + ("bg-primary/[0.06]" if is_today else "")}>
                 <div className={"mb-2 flex items-baseline gap-2 border-b px-1.5 pb-2 " + ("border-primary/40" if is_today else "border-border")}>
                     <span className={"font-display text-[0.95rem] " + ("text-primary" if is_today else "text-foreground")}>{dow}</span>
                     <span className={"text-xs " + ("text-primary/70" if is_today else "text-muted-foreground")}>{daynum}</span>
