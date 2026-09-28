@@ -9,7 +9,7 @@ import from .timeutil { today_str, add_days, days_between }
 import from .items { next_due, add_item, list_items, complete_item, item_by_id, delete_item, list_subtasks, retag_item }
 import from .areas { list_areas }
 import from .ai { _guess_due, _fallback_parse }
-import from .topics { _topic_map }
+import from .topics { _topic_map, Verdicts, SameGroup }
 import from .connectors {
     _ics_date, _unfold, _parse_ics, _notion_title, _notion_date, _notion_lines, _notion_items,
     _plan_date, _expand_note, _drop_calendar_dupes, _ingest, ExternalItem, NoteTask, NoteReading,
@@ -580,4 +580,16 @@ test "the model is only asked about the broadest candidates it needs" {
     got = _topics_of(_topic_map(["Recruiting: Acme OA", "Recruiting: Acme call", "Recruiting: Globex"], grouped, _no_verdict));
     assert asked == ["Recruiting: Acme / Recruiting: Globex"];
     assert got["Recruiting: Acme OA"] == ["Recruiting", "Acme OA"];
+}
+
+test "one call asks the model only its budget of new questions" {
+    verdicts = Verdicts(budget=1);
+    first = verdicts.get("orbit-test|a|b", lambda { SameGroup.SAME_GROUP; });
+    second = verdicts.get("orbit-test|a|c", lambda { SameGroup.SAME_GROUP; });
+    again = verdicts.get("orbit-test|a|b", lambda { SameGroup.DIFFERENT_GROUPS; });
+    for m in verdicts.memos.values() {
+        del m;
+    }
+    assert [first, second, again] == ["SAME_GROUP", "", "SAME_GROUP"];
+    assert verdicts.pending and verdicts.answered == 1;
 }

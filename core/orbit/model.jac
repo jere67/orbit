@@ -96,6 +96,13 @@ obj TitleTopic {
         part: str = "";
 }
 
+# Every title's topic; `pending` is true while the model still has questions
+# to answer (ask again to refine).
+obj TopicMap {
+    has topics: list[TitleTopic] = [],
+        pending: bool = False;
+}
+
 obj Briefing {
     has generated_at: str = "",
         headline: str = "",

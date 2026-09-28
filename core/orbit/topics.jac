@@ -18,7 +18,7 @@ import from difflib { SequenceMatcher }
 import from .config { ai_enabled, ai_status }
 import from .llm { orbit_llm }
 import from .items { list_items }
-import from .model { TitleTopic }
+import from .model { TitleTopic, TopicMap }
 
 
 """Characters that separate a title's subject from its detail ("X - Y", "X: Y")."""
@@ -238,12 +238,15 @@ def _vote(ask: Callable[[], SameGroup | NameMatch]) -> str {
 }
 
 
-"""Answers to candidate questions: cached ones always, and - when `ask_model`
-is set and AI is on - the model's answer to the rest, which are then cached.
-Questions with no answer are left out, so their fallback applies."""
+"""Answers to candidate questions: cached ones always, plus the model's answer
+to up to `budget` new ones, which are then cached. A question left without an
+answer gets '' (so its fallback applies) and marks the pass `pending`;
+`answered` counts the new verdicts actually cached."""
 obj Verdicts {
     has memos: dict[str, TopicMemo] = {},
-        ask_model: bool = False,
+        budget: int = 0,
+        pending: bool = False,
+        answered: int = 0,
         used: set[str] = set();
 
     def get(question: str, ask: Callable[[], SameGroup | NameMatch]) -> str {
@@ -252,14 +255,17 @@ obj Verdicts {
         if key in self.memos {
             return self.memos[key].verdict;
         }
-        if not self.ask_model {
+        if self.budget <= 0 {
+            self.pending = True;
             return "";
         }
+        self.budget -= 1;
         verdict = _vote(ask);
         if verdict {
             memo = TopicMemo(key=key, verdict=verdict);
             root ++> memo;
             self.memos[key] = memo;
+            self.answered += 1;
         }
         return verdict;
     }
@@ -359,14 +365,22 @@ def _topic_map(titles: list[str], grouped: Callable[[str, str], str], same: Call
 }
 
 
+"""How many new questions one `title_topics` call may ask the model. Each takes
+seconds on a local model, so a first pass is spread over several short calls
+rather than one that holds a server worker for minutes."""
+glob ASKS_PER_CALL: int = 4;
+
+
 """Every item title's topic and detail, e.g. 'EECS 482 - P1' -> topic 'EECS 482',
-part 'P1'. With `ask_model` the model is asked about candidates it has not
-judged yet (seconds each on a local model); without it only cached verdicts
-are used, so the call is instant and safe to make on every render."""
-def:pub title_topics(ask_model: bool = False) -> list[TitleTopic] {
+part 'P1'. With `ask_model` the model answers up to ASKS_PER_CALL questions it
+has not judged yet, and `pending` says whether more remain (call again to
+refine); without it only cached verdicts are used, so the call is instant and
+safe to make on every render."""
+def:pub title_topics(ask_model: bool = False) -> TopicMap {
     all_memos = [root-->][?:TopicMemo];
     memos = {m.key: m for m in all_memos};
-    verdicts = Verdicts(memos=memos, ask_model=ask_model and ai_enabled());
+    budget = ASKS_PER_CALL if ask_model and ai_enabled() else 0;
+    verdicts = Verdicts(memos=memos, budget=budget);
     grouped = lambda (item: str, other: str) -> str {
         pair = sorted([item, other]);
         return verdicts.get(
@@ -381,12 +395,15 @@ def:pub title_topics(ask_model: bool = False) -> list[TitleTopic] {
         );
     };
     topics = _topic_map([it.title for it in list_items()], grouped, same);
-    if verdicts.ask_model {
+    # Only a pass that answered everything knows which cached verdicts are stale.
+    if budget > 0 and not verdicts.pending {
         for m in all_memos {
             if m.key not in verdicts.used {
                 del m;
             }
         }
     }
-    return topics;
+    # Pending only when this call made progress, so a model that keeps failing
+    # does not keep the client asking.
+    return TopicMap(topics=topics, pending=verdicts.pending and verdicts.answered > 0);
 }
