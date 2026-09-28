@@ -8,7 +8,7 @@ resolves this file; native builds resolve the `.native.jac` sibling.
 import from "lucide-react" {
     LayoutDashboard, MessageCircle, Inbox, TrendingUp, Settings,
     Sparkles, Sun, Check, Send, Plus, Flame, Target, Link, RefreshCw,
-    TriangleAlert, ArrowRight
+    TriangleAlert, ArrowRight, ChevronDown, ChevronUp
 }
 
 glob LUCIDE = {
@@ -16,7 +16,7 @@ glob LUCIDE = {
     "insight": TrendingUp, "settings": Settings, "sparkles": Sparkles,
     "sun": Sun, "check": Check, "send": Send, "plus": Plus, "flame": Flame,
     "target": Target, "link": Link, "refresh": RefreshCw, "alert": TriangleAlert,
-    "arrow": ArrowRight
+    "arrow": ArrowRight, "chevronDown": ChevronDown, "chevronUp": ChevronUp
 };
 
 def:pub Icon(name: str, size: int, color: str) -> JsxElement {

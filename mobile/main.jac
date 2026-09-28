@@ -20,10 +20,9 @@ import from core.orbit.analytics { get_analytics }
 import from core.orbit.assistant { quick_dayplan, day_at_a_glance, quick_suggestions, suggestions, weekly_overview, ask }
 import from core.orbit.connectors { connector_status, sync_connectors }
 import from core.orbit.config { ai_status }
-import from core.orbit.model { Item, Area, Priority, Status, ItemKind, Briefing, Analytics, DayPlan, WeekOutlook, DayBucket }
-
-glob MONTHS: list = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
+import from core.orbit.topics { title_topics }
+import from ..lib.dates { short_date, date_runs }
+import from core.orbit.model { Item, Area, Priority, Status, ItemKind, Briefing, Analytics, DayPlan, WeekOutlook, DayBucket, TitleTopic }
 
 def prio_label(p: Priority) -> str {
     if p == Priority.CRITICAL { return "Critical"; }
@@ -39,20 +38,6 @@ def kind_label(k: ItemKind) -> str {
     return "Task";
 }
 
-def short_date(iso: str) -> str {
-    if not iso or len(iso) < 10 {
-        return "";
-    }
-    mi = int(iso[5:7]) - 1;
-    if mi < 0 or mi > 11 {
-        return iso[:10];
-    }
-    day = iso[8:10];
-    if day.startswith("0") {
-        day = day[1:];
-    }
-    return MONTHS[mi] + " " + day;
-}
 
 
 glob styles = StyleSheet.create({
@@ -136,6 +121,15 @@ glob styles = StyleSheet.create({
     "chip": {"flexDirection": "row", "alignItems": "flex-start", "gap": 6, "paddingVertical": 4},
     "chipBox": {"width": 16, "height": 16, "borderRadius": 5, "borderWidth": 2, "alignItems": "center", "justifyContent": "center", "marginTop": 1},
     "chipText": {"color": "#24201b", "fontSize": 12, "flex": 1, "lineHeight": 16},
+    "piece": {"color": "#24201b"},
+    "pieceDone": {"color": "#8a8073", "textDecorationLine": "line-through"},
+    "pieceSep": {"color": "#c9bfb0"},
+    "pieceMeta": {"color": "#8a8073", "textDecorationLine": "none"},
+    "pieceRow": {"color": "#24201b", "fontSize": 13, "lineHeight": 19},
+    "topicWrap": {"gap": 8},
+    "topicItems": {"marginLeft": 18, "paddingLeft": 10, "borderLeftWidth": 2, "borderLeftColor": "#e4dccf", "gap": 8},
+    "topicCount": {"flexDirection": "row", "alignItems": "center", "gap": 2, "paddingHorizontal": 4, "paddingVertical": 2},
+    "topicCountText": {"color": "#8a8073", "fontSize": 12},
     "chipTextDone": {"color": "#8a8073", "fontSize": 12, "flex": 1, "lineHeight": 16, "textDecorationLine": "line-through"},
     "dayEmpty": {"color": "#b3aa9b", "fontSize": 12, "fontStyle": "italic", "paddingVertical": 4},
     "dayMeta": {"color": "#8a8073", "fontSize": 11, "marginTop": 4},
@@ -248,10 +242,13 @@ def:pub app -> JsxElement {
         chat_input: str = "",
         chat_msgs: list = [],
         chat_busy: bool = False,
-        ai_state: str = "off";
+        ai_state: str = "off",
+        topics: dict[str, TitleTopic] = {},
+        open_topics: list = [];
 
     async def reload {
         items = await list_items();
+        await load_topics(False);
         areas = await list_areas();
         hint_defaults = await default_area_hints();
         brief = await fast_briefing();
@@ -274,9 +271,27 @@ def:pub app -> JsxElement {
         await reload();
     }
 
+    """Map each title to its topic from cached verdicts. With `ask_model`, keep
+    asking the model a few new questions per call - re-grouping after each -
+    until it has none left."""
+    async def load_topics(ask_model: bool) {
+        while True {
+            result = await title_topics(ask_model);
+            by_title: dict[str, TitleTopic] = {};
+            for r in result.topics {
+                by_title[r.title] = r;
+            }
+            topics = by_title;
+            if not result.pending {
+                break;
+            }
+        }
+    }
+
     async can with entry {
         await reload();
         await auto_sync();
+        await load_topics(True);
         await load_ai();
     }
 
@@ -289,6 +304,21 @@ def:pub app -> JsxElement {
         await capture(text);
         capture_text = "";
         busy = False;
+        await reload();
+    }
+
+    """Complete every open item in `open_ids`; when there are none, reopen
+    every item in `done_ids` (so a group's checkbox toggles the whole group)."""
+    async def do_toggle_many(open_ids: list, done_ids: list) {
+        if len(open_ids) > 0 {
+            for id in open_ids {
+                await complete_item(id);
+            }
+        } else {
+            for id in done_ids {
+                await set_status(id, "TODO");
+            }
+        }
         await reload();
     }
 
@@ -371,6 +401,7 @@ def:pub app -> JsxElement {
         }
         sync_summary = ("Synced - " + "   ".join(parts)) if parts else "No connectors configured yet.";
         await reload();
+        await load_topics(True);
     }
 
     async def do_load_outlook {
@@ -403,6 +434,11 @@ def:pub app -> JsxElement {
             }
         }
         return None;
+    }
+
+    def area_label(key: str) -> str {
+        a = area_for(key);
+        return a.label if a is not None else key;
     }
 
     def area_color(key: str) -> str {
@@ -502,6 +538,170 @@ def:pub app -> JsxElement {
             </View>;
     }
 
+    def topic_of(it: Item) -> str {
+        return topics[it.title].topic if it.title in topics else it.title;
+    }
+
+    def part_of(it: Item) -> str {
+        return topics[it.title].part if it.title in topics else "";
+    }
+
+    """Items grouped by topic, each group where its topic first appears."""
+    def by_topic(xs: list) -> list {
+        groups = [];
+        index = {};
+        for it in xs {
+            t = topic_of(it);
+            if t in index {
+                groups[index[t]]["items"].append(it);
+            } else {
+                index[t] = len(groups);
+                groups.append({"topic": t, "items": [it]});
+            }
+        }
+        return groups;
+    }
+
+    def toggle_topic(t: str) {
+        if t in open_topics {
+            open_topics = [x for x in open_topics if x != t];
+        } else {
+            open_topics = open_topics + [t];
+        }
+    }
+
+    """Separate text pieces with a quiet '|'. A no-break space keeps each bar
+    on the line of the piece before it, so a row wraps after a bar."""
+    def joined(nodes: list) -> list {
+        out = [];
+        i = 0;
+        for n in nodes {
+            if i > 0 {
+                out.append(<Text key={"sep" + str(i)} style={styles["pieceSep"]}>{"\u00a0| "}</Text>);
+            }
+            out.append(n);
+            i += 1;
+        }
+        return out;
+    }
+
+    """One piece of a joined row: completes its open items, or reopens them
+    all when none are open."""
+    def piece(key: str, label: str, members: list, settled: any, suffix: str) -> JsxElement {
+        open_ids = [jid(it) for it in members if not settled(it)];
+        done = len(open_ids) == 0;
+        return
+            <Text key={key} style={styles["pieceDone"] if done else styles["piece"]}
+                  onPress={lambda { do_toggle_many(open_ids, [jid(it) for it in members]); }}>
+                {label}
+                {(<Text style={styles["pieceMeta"]}>{" · " + suffix}</Text>) if suffix else ""}
+            </Text>;
+    }
+
+    """A week-board row for several items on one topic: 'EECS 482 | LEC | P1'.
+    The checkbox toggles them all; each piece toggles its own item."""
+    def render_topic_chip(topic: str, members: list) -> JsxElement {
+        bare = [it for it in members if part_of(it) == ""];
+        parts = [it for it in members if part_of(it) != ""];
+        open_items = [it for it in members if not is_settled(it)];
+        done = len(open_items) == 0;
+        color = area_color((open_items[0] if len(open_items) > 0 else members[0]).area_key);
+        head = piece("head", topic, bare, is_settled, "") if len(bare) > 0 else
+            <Text key="head" style={styles["pieceDone"] if done else styles["piece"]}>{topic}</Text>;
+        return
+            <View key={"topic:" + topic} style={styles["chip"]}>
+                <Pressable style={[styles["chipBox"], {"borderColor": color, "backgroundColor": color if done else "transparent"}]}
+                           onPress={lambda { do_toggle_many([jid(it) for it in open_items], [jid(it) for it in members]); }}>
+                    {(<Icon name="check" size={10} color="#ffffff" />) if done else <View />}
+                </Pressable>
+                <Text style={styles["chipText"]}>
+                    {joined([head] + [piece(jid(it), part_of(it), [it], is_settled, "") for it in parts])}
+                </Text>
+            </View>;
+    }
+
+    def render_week_group(g: dict) -> JsxElement {
+        if len(g["items"]) == 1 {
+            return render_chip(g["items"][0]);
+        }
+        return render_topic_chip(g["topic"], g["items"]);
+    }
+
+    """A topic's items as one piece per distinct part - items with no part of
+    their own are labelled by kind - each with its dates: 'P1 · Sep 29–Oct 1'."""
+    def agenda_pieces(members: list) -> list {
+        segs = [];
+        index = {};
+        for it in members {
+            p = part_of(it);
+            key = p if p else "kind:" + str(it.kind);
+            if key in index {
+                segs[index[key]]["items"].append(it);
+            } else {
+                index[key] = len(segs);
+                segs.append({"part": p, "items": [it]});
+            }
+        }
+        out = [];
+        i = 0;
+        for seg in segs {
+            its = seg["items"];
+            label = seg["part"] if seg["part"] else kind_label(its[0].kind) + ("s" if len(its) > 1 else "");
+            open_its = [it for it in its if not is_done(it)];
+            # One tap finishes the next open item, not every day at once.
+            out.append(piece("seg" + str(i), label, open_its[:1] if len(open_its) > 0 else its, is_done, date_runs([it.due for it in its])));
+            i += 1;
+        }
+        return joined(out);
+    }
+
+    """An agenda card for several items on one topic. The checkbox toggles
+    them all; the count opens the individual items."""
+    def render_topic_card(topic: str, members: list) -> JsxElement {
+        open_items = [it for it in members if not is_done(it)];
+        done = len(open_items) == 0;
+        color = area_color((open_items[0] if len(open_items) > 0 else members[0]).area_key);
+        area_keys = [];
+        for it in members {
+            if it.area_key not in area_keys {
+                area_keys.append(it.area_key);
+            }
+        }
+        is_open = topic in open_topics;
+        return
+            <View key={"topic:" + topic} style={styles["topicWrap"]}>
+                <View style={styles["itemCard"]}>
+                    <Pressable style={[styles["checkBtn"], {"borderColor": color, "backgroundColor": color if done else "transparent"}]}
+                               onPress={lambda { do_toggle_many([jid(it) for it in open_items], [jid(it) for it in members]); }}>
+                        {(<Icon name="check" size={12} color="#ffffff" />) if done else <View />}
+                    </Pressable>
+                    <View style={styles["itemBody"]}>
+                        <View style={styles["itemTopRow"]}>
+                            {[
+                                <View key={k} style={[styles["areaPill"], {"backgroundColor": area_color(k) + "1f"}]}>
+                                    <Text style={[styles["areaPillText"], {"color": area_color(k)}]}>{area_label(k)}</Text>
+                                </View> for k in area_keys
+                            ]}
+                            <Text style={styles["itemTitleDone"] if done else styles["itemTitle"]} numberOfLines={2}>{topic}</Text>
+                        </View>
+                        <Text style={styles["pieceRow"]}>{agenda_pieces(members)}</Text>
+                    </View>
+                    <Pressable style={styles["topicCount"]} onPress={lambda { toggle_topic(topic); }}>
+                        <Text style={styles["topicCountText"]}>{str(len(members))}</Text>
+                        <Icon name={"chevronUp" if is_open else "chevronDown"} size={14} color="#8a8073" />
+                    </Pressable>
+                </View>
+                {(<View style={styles["topicItems"]}>{[render_item(it) for it in members]}</View>) if is_open else <View />}
+            </View>;
+    }
+
+    def render_agenda_group(g: dict) -> JsxElement {
+        if len(g["items"]) == 1 {
+            return render_item(g["items"][0]);
+        }
+        return render_topic_card(g["topic"], g["items"]);
+    }
+
     def render_chip(it: Item) -> JsxElement {
         color = area_color(it.area_key);
         done = is_settled(it);
@@ -531,7 +731,7 @@ def:pub app -> JsxElement {
                     <Text style={styles["dayNum"]}>{daynum}</Text>
                 </View>
                 {(<Text style={styles["dayEmpty"]}>No tasks</Text>) if len(b.items) == 0 else <View />}
-                {[render_chip(it) for it in b.items]}
+                {[render_week_group(g) for g in by_topic(b.items)]}
                 {(<Text style={styles["dayMeta"]}>{str(open_count) + " open · " + str(b.effort_min) + " min"}</Text>) if open_count > 0 else <View />}
             </View>;
     }
@@ -673,7 +873,7 @@ def:pub app -> JsxElement {
                     <Icon name="inbox" size={26} color="#ff5c45" />
                     <Text style={styles["emptyText"]}>Your agenda is empty. Capture something above, or pull in your Calendar and Notion from Settings.</Text>
                 </View>) if len(items) == 0 else <View />}
-                {[render_item(it) for it in agenda_items()]}
+                {[render_agenda_group(g) for g in by_topic(agenda_items())]}
             </View>;
     }
 
