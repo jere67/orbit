@@ -598,7 +598,7 @@ def:pub app -> JsxElement {
             </Text>;
     }
 
-    """A week-board row for several items on one topic: 'EECS 482 | LEC | P1'.
+    """A week-board row for several items on one topic: 'Chem 101 | Lab | Quiz'.
     The checkbox toggles them all; each piece toggles its own item."""
     def render_topic_chip(topic: str, members: list) -> JsxElement {
         bare = [it for it in members if part_of(it) == ""];
