@@ -3,12 +3,13 @@ test creates uniquely-marked nodes and cleans them up to stay isolated."""
 
 import os;
 import zoneinfo;
-import from .model { Item, Area, Priority, Status, ItemKind }
+import from .model { Item, Area, Priority, Status, ItemKind, TitleTopic }
 import from .scoring { due_pressure, priority_weight, urgency, rank, is_open }
 import from .timeutil { today_str, add_days, days_between }
 import from .items { next_due, add_item, list_items, complete_item, item_by_id, delete_item, list_subtasks, retag_item }
 import from .areas { list_areas }
 import from .ai { _guess_due, _fallback_parse }
+import from .topics { _topic_map }
 import from .connectors {
     _ics_date, _unfold, _parse_ics, _notion_title, _notion_date, _notion_lines, _notion_items,
     _plan_date, _expand_note, _drop_calendar_dupes, _ingest, ExternalItem, NoteTask, NoteReading,
@@ -511,4 +512,72 @@ test "the person's distinctive hint words decide an area before any model" {
     assert _decided_area("Research paper", areas, []) == "";
     # A title the person filed themselves wins outright.
     assert _decided_area("Old Mission Test", areas, [Filing(title="old mission test", area="clubs")]) == "clubs";
+}
+
+
+"""A stand-in for the model's same-group verdicts: every pair belongs together
+except the listed 'first|second' pairs."""
+def _groups(different: list[str]) -> Callable[[str, str], str] {
+    return lambda (a: str, b: str) -> str {
+        return "DIFFERENT_GROUPS" if (a + "|" + b) in different or (b + "|" + a) in different else "SAME_GROUP";
+    };
+}
+
+def _no_verdict(_first: str, _second: str) -> str {
+    return "";
+}
+
+def _topics_of(rows: list[TitleTopic]) -> dict[str, list[str]] {
+    return {r.title: [r.topic, r.part] for r in rows};
+}
+
+test "titles join the broadest candidate whose items the model keeps together" {
+    rows = _topic_map(
+        ["EECS 482", "EECS 482 - P1", "EECS 482 - LEC", "EECS 449", "EECS 449: Assignment 1", "Buy milk"],
+        _groups(["EECS 449|EECS 482"]),
+        _no_verdict
+    );
+    got = _topics_of(rows);
+    assert got["EECS 482 - P1"] == ["EECS 482", "P1"];
+    assert got["EECS 482 - LEC"] == ["EECS 482", "LEC"];
+    assert got["EECS 482"] == ["EECS 482", ""];
+    assert got["EECS 449: Assignment 1"] == ["EECS 449", "Assignment 1"];
+    assert got["Buy milk"] == ["Buy milk", ""];
+}
+
+test "the model can keep a shared word from grouping unrelated items" {
+    titles = ["Call mom", "Call the bank"];
+    split = _topics_of(_topic_map(titles, _groups(["Call mom|Call the bank"]), _no_verdict));
+    assert split["Call mom"] == ["Call mom", ""];
+    joined = _topics_of(_topic_map(titles, _groups([]), _no_verdict));
+    assert joined["Call mom"] == ["Call", "mom"];
+}
+
+test "without a verdict, structure decides: an exact title or a separator" {
+    got = _topics_of(_topic_map(
+        ["AIMS", "AIMS Meeting", "AIMS: Social Media - deployment", "Recruiting: Acme OA", "Recruiting - Globex call", "EECS 482", "EECS 449"],
+        _no_verdict,
+        _no_verdict
+    ));
+    assert got["AIMS Meeting"] == ["AIMS", "Meeting"];
+    assert got["AIMS: Social Media - deployment"] == ["AIMS", "Social Media - deployment"];
+    assert got["Recruiting - Globex call"] == ["Recruiting", "Globex call"];
+    assert got["EECS 482"] == ["EECS 482", ""];
+}
+
+test "a near-identical name joins its topic only when the model says it is the same" {
+    titles = ["Chem 101", "Chem 101 - Lab", "Chme 101 - Quiz", "Chem 102 - Lab"];
+    same = lambda (_name: str, other: str) -> str { return "SAME_NAME" if other == "Chme 101" else "DIFFERENT_NAMES"; };
+    got = _topics_of(_topic_map(titles, _no_verdict, same));
+    assert got["Chme 101 - Quiz"] == ["Chem 101", "Quiz"];
+    assert got["Chem 102 - Lab"] == ["Chem 102 - Lab", ""];
+    assert _topics_of(_topic_map(titles, _no_verdict, _no_verdict))["Chme 101 - Quiz"] == ["Chme 101 - Quiz", ""];
+}
+
+test "the model is only asked about the broadest candidates it needs" {
+    asked: list[str] = [];
+    grouped = lambda (a: str, b: str) -> str { asked.append(a + " / " + b); return "SAME_GROUP"; };
+    got = _topics_of(_topic_map(["Recruiting: Acme OA", "Recruiting: Acme call", "Recruiting: Globex"], grouped, _no_verdict));
+    assert asked == ["Recruiting: Acme / Recruiting: Globex"];
+    assert got["Recruiting: Acme OA"] == ["Recruiting", "Acme OA"];
 }

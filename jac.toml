@@ -75,6 +75,7 @@ exclude = [".jac/*"]
 "core.orbit.briefing" = "server"
 "core.orbit.analytics" = "server"
 "core.orbit.ai" = "server"
+"core.orbit.topics" = "server"
 
 [jac-shadcn]
 style = "nova"

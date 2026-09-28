@@ -88,6 +88,14 @@ obj DayBucket {
         effort_min: int = 0;
 }
 
+# Which topic a title belongs to (see topics.jac): 'EECS 482 - P1' has topic
+# 'EECS 482' and part 'P1'; a title that is its own topic has part ''.
+obj TitleTopic {
+    has title: str,
+        topic: str,
+        part: str = "";
+}
+
 obj Briefing {
     has generated_at: str = "",
         headline: str = "",
